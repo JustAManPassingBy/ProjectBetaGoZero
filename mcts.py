@@ -353,7 +353,7 @@ class MCTS_Node():
     # for spot in Board :
     #    max(max_spot.win_prob(), spot.win_prob())
     # return max_spot.win_prob()
-    def get_win_prob(self) :
+    def get_max_win_prob(self) :
         max_win_prob = MIN_VALUE
 
         for child in self.children :

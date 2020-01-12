@@ -151,7 +151,7 @@ class RL_Model():
         ret_locate = tuple(ret_locate)
 
         root_node.summary()
-        win_prob = root_node.get_win_prob()
+        win_prob = root_node.get_max_win_prob()
 
         self.part_obs_inputs_array.append(part_obs_inputs)
         self.mcts_records.append(mcts_move_prob)
