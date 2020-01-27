@@ -4,16 +4,10 @@
 import numpy as np
 import copy
 
-
-WHITE = -1
-BLACK = +1
-EMPTY = 0
-PASS_MOVE = None
-
-PARTIAL_OBSERVABILITY = 4
-
-DEFAULT_GAME_COUNT = 340
-
+from definitions import PASS_MOVE, BLACK, EMPTY, WHITE, KOMI
+from definitions import MAX_VALUE, MIN_VALUE
+from definitions import BOARD_SIZE, SQUARE_BOARD_SIZE, DEFAULT_GAME_COUNT
+from definitions import PARTIAL_OBSERVABILITY, MCTS_ADDITIONAL_SEARCH
 
 class GameState(object):
     """State of a game of Go and some basic functions to interact with it
@@ -23,7 +17,7 @@ class GameState(object):
     # amount of time, hence this shared lookup table {boardsize: {position: [neighbors]}}
     __NEIGHBORS_CACHE = {}
 
-    def __init__(self, size=19, komi=7.5, enforce_superko=False):
+    def __init__(self, size=BOARD_SIZE, komi=KOMI, enforce_superko=False):
         self.board = np.zeros((size, size), dtype=int)
         self.board.fill(EMPTY)
         self.size = size
@@ -181,6 +175,7 @@ class GameState(object):
         for (x, y) in group:
             self._update_hash((x, y), self.board[x, y])
             self.board[x, y] = EMPTY
+            self.move_count -= 1
         for (x, y) in group:
             # clear group_sets for all positions in 'group'
             self.group_sets[x][y] = set()
@@ -206,7 +201,7 @@ class GameState(object):
     def show_4_latest_boards(self) :
         # deepcopy latest boards
         latest_boards = copy.deepcopy(self.latest_boards) 
-        return latest_boards
+        return (latest_boards / 2) + 0.5
 
     def is_done(self, offset=0) :
         return (self.move_count > (DEFAULT_GAME_COUNT + offset))
@@ -533,7 +528,7 @@ class GameState(object):
         else:
             # Tie
             winner = 0
-        return winner
+        return winner, score_black, score_white
 
     def place_handicaps(self, actions):
         if len(self.history) > 0:

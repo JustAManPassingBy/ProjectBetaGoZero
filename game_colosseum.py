@@ -4,62 +4,13 @@ from math import *
 import numpy as np
 from matplotlib import pyplot as plt
 
-WHITE = -1
-BLACK = 1
-PASS_MOVE = None
+from definitions import PASS_MOVE, BLACK, EMPTY, WHITE, KOMI
+from definitions import MAX_VALUE, MIN_VALUE
+from definitions import BOARD_SIZE, SQUARE_BOARD_SIZE, DEFAULT_GAME_COUNT
+from definitions import PARTIAL_OBSERVABILITY, MCTS_ADDITIONAL_SEARCH
+from definitions import SAVE_PERIOD
 
-# Draw plot with Board
-def Draw_Plot(board, 
-              figure_num=3, 
-              pause_time=0.1,
-              save_image=False,
-              save_image_name=None) :
-
-    plt.figure(figure_num, clear=True)
-
-    plt.imshow(board)
-
-    for i in range(0, 19) :
-        plt.axhline(y=i, color='black', linewidth=1)
-        plt.axvline(x=i, color='black', linewidth=1)
-
-    plt.title("Board")
-    plt.colorbar()  
-
-    plt.draw()
-    plt.pause(pause_time)
-
-    if (save_image is True) :
-        plt.savefig(save_image_name)
-    
-    return
-
-# Draw win probability graph
-def Draw_Win_Graph(win_prob_list,
-                   figure_num=5,
-                   save_image_name=None) :
-    
-    plt.figure(figure_num, clear=True)
-    plt.plot(win_prob_list) # X : [0 ... N-1]
-
-    plt.savefig(save_image_name)
-
-    return
-
-# Record something into string
-def Record(string,
-           filename,
-           append_mode=True) :
-    
-    if (append_mode is True) :
-        file = open(filename, "a")
-    else :
-        file = open(filename, "w")
-
-    file.write(str(string))
-    file.close()
-
-    return
+from record_functions import Draw_Plot, Draw_Win_Graph, Record
 
 # Function Game_Collosseum
 #  1. Get two model
@@ -92,20 +43,21 @@ def Game_Collosseum(black_model, white_model, game_count) :
             
             # - Act move & get results 
             if (Go_Game.do_move(action) is True) :
-                winner = Go_Game.get_winner()
+                winner, black_go, white_go = Go_Game.get_winner()
 
                 if (winner is BLACK) :
                     print("winner : BLACK")
-                    Record(str("Winner is BLACK - Game : " + str(game_count)), "result/game_results.txt")
+                    Record(str("Winner is BLACK - Game : " + str(game_count) + " B : " + str(black_go) + " W : " + str(white_go) + "\n"), "result/game_results.txt")
                 else :
                     print("winner : WHITE")
-                    Record(str("Winner is WHITE - Game : " + str(game_count)), "result/game_results.txt")
+                    Record(str("Winner is WHITE - Game : " + str(game_count) + " B : " + str(black_go) + " W : " + str(white_go) + "\n"), "result/game_results.txt")
 
                 board = np.array(Go_Game.show_result())
                 Draw_Plot(board, save_image=True, save_image_name=str("snapshot_" + str(game_count) + ".png"))
 
-                Draw_Win_Graph(black_win_prob, figure_num=5, save_image_name=str("white_win_" + str(game_count) + ".png"))
-                Draw_Win_Graph(black_win_prob, figure_num=6, save_image_name=str("black_win_" + str(game_count) + ".png"))
+                if (game_count % SAVE_PERIOD) is 0 :
+                    Draw_Win_Graph(white_win_prob, figure_num=5, save_image_name=str("white_win_" + str(game_count) + ".png"))
+                    Draw_Win_Graph(black_win_prob, figure_num=6, save_image_name=str("black_win_" + str(game_count) + ".png"))
 
                 break
 
@@ -120,7 +72,7 @@ def Game_Collosseum(black_model, white_model, game_count) :
         return winner
     
     # ILLEGAL MOVE
-    except ValueError :
+    except KeyboardInterrupt :
         board = np.array(Go_Game.show_result())
         
         '''
