@@ -36,9 +36,11 @@ def Game_Collosseum(black_model, white_model, game_count) :
             # - Get action from predicted model
             if (current_player is BLACK) :
                 action, win_prob = black_model.get_move(BLACK, Go_Game)
+                print("Black win prob is : ", str(win_prob * 100.0), " %")
                 black_win_prob.append(win_prob)
             else :
                 action, win_prob = white_model.get_move(WHITE, Go_Game)
+                print("White win prob is : ", str(win_prob * 100.0), " %")
                 white_win_prob.append(win_prob)
             
             # - Act move & get results 
@@ -53,11 +55,11 @@ def Game_Collosseum(black_model, white_model, game_count) :
                     Record(str("Winner is WHITE - Game : " + str(game_count) + " B : " + str(black_go) + " W : " + str(white_go) + "\n"), "result/game_results.txt")
 
                 board = np.array(Go_Game.show_result())
-                Draw_Plot(board, save_image=True, save_image_name=str("snapshot_" + str(game_count) + ".png"))
+                Draw_Plot(board, save_image=True, save_image_name=str("result/snapshot/snapshot_" + str(game_count) + ".png"))
 
                 if (game_count % SAVE_PERIOD) is 0 :
-                    Draw_Win_Graph(white_win_prob, figure_num=5, save_image_name=str("white_win_" + str(game_count) + ".png"))
-                    Draw_Win_Graph(black_win_prob, figure_num=6, save_image_name=str("black_win_" + str(game_count) + ".png"))
+                    Draw_Win_Graph(white_win_prob, figure_num=5, save_image_name=str("result/white_win/white_win_" + str(game_count) + ".png"))
+                    Draw_Win_Graph(black_win_prob, figure_num=6, save_image_name=str("result/black_win/black_win_" + str(game_count) + ".png"))
 
                 break
 

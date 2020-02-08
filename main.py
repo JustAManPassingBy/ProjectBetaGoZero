@@ -10,6 +10,12 @@ from record_functions import Record
 black_model = model.RL_Model(print_summary=True)
 white_model = model.RL_Model()
 
+black_model.set_team(BLACK)
+white_model.set_team(WHITE)
+
+black_model.hang_opposite_model(white_model)
+white_model.hang_opposite_model(black_model)
+
 train_black = black_model.restore_model(restore_train_counts=None)
 train_white = white_model.restore_model(restore_train_counts=None)
 

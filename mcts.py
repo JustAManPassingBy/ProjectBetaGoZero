@@ -11,6 +11,8 @@ from definitions import MAX_VALUE, MIN_VALUE
 from definitions import BOARD_SIZE, SQUARE_BOARD_SIZE, DEFAULT_GAME_COUNT
 from definitions import PARTIAL_OBSERVABILITY, MCTS_ADDITIONAL_SEARCH
 
+from record_functions import Draw_Win_Spot
+
 class MCTS_Node():
     
     def __init__(self, action, parent, turn, Model, GameState) :
@@ -38,7 +40,11 @@ class MCTS_Node():
     def _get_mean_value(self) :
         self._calculate_action_spot_prob()
 
-        return self.value_sum / self.times_visited
+        '''
+        return self.value_sum / self.times_visited # Use Average
+        '''
+
+        return self.value_min
 
     def _calculate_possible_actions(self) :
 
@@ -51,13 +57,21 @@ class MCTS_Node():
 
             self.possible_actions_calculated = True
 
-    def _calculate_action_spot_prob(self) :
+    def _calculate_action_spot_prob(self,
+                                    opposite=False) :
+
         if (self.action_spot_prob_calculated is False) :
             # (1, 361) / Scalar
-            self.action_prob , self.node_init_value = self.Model.predict_func(self.GameState.show_4_latest_boards()) # spot_prob / win_prob
+            if (opposite is True) or (self.turn != self.Model.get_team()):
+                # Use opposite's action_prob only
+                self.action_prob , _ = self.Model.opposite_Model.predict_func(self.GameState.show_4_latest_boards()) # spot_prob
+                _ , self.node_init_value = self.Model.predict_func(self.GameState.show_4_latest_boards()) # win_prob
+            else :
+                self.action_prob , self.node_init_value = self.Model.predict_func(self.GameState.show_4_latest_boards()) # spot_prob / win_prob
             self.node_init_value = np.asscalar(self.node_init_value)
 
             self.value_sum = self.node_init_value
+            self.value_min = self.node_init_value
             self.times_visited += 1
 
             self.action_spot_prob_calculated = True
@@ -101,6 +115,7 @@ class MCTS_Node():
         max_vaule = MIN_VALUE
         
         for child in self.children :
+                            
             if (child._get_mean_value() > max_vaule) :
                 max_vaule = child._get_mean_value()
                 best_child = child
@@ -164,8 +179,6 @@ class MCTS_Node():
         else :
             actions_space = self.high_prob_actions
 
-        num_search = 0
-
         for action in actions_space :
             new_GameState = self.GameState.copy()
             new_GameState.do_move(action) 
@@ -176,10 +189,6 @@ class MCTS_Node():
                 continue
 
             self.children.append(MCTS_Node(action, self, self.turn * -1, self.Model, new_GameState))
-            num_search += 1
-
-        if (num_search is 0) :
-            print("Error num search is 0")
 
         return self.select_best_leaf()
 
@@ -256,6 +265,9 @@ class MCTS_Node():
         self.value_sum += update_value
         self.times_visited += 1
 
+        if (self.value_min > update_value) :
+            self.value_min = update_value
+
         if not self._is_root() :
             self.parent.propagate(update_value)
 
@@ -273,7 +285,7 @@ class MCTS_Node():
         summarized = 0.0
 
         for child in self.children :
-            action_y, action_x = child.action
+            action_x, action_y = child.action
 
             spot_prob[action_y][action_x] = child.times_visited
             summarized += child.times_visited
@@ -310,7 +322,7 @@ class MCTS_Node():
             action = child.action
             win_prob = child._get_mean_value()
 
-            action_y, action_x = action
+            action_x, action_y = action
             win_prob_map[action_y][action_x] = win_prob
 
         return win_prob_map
@@ -323,51 +335,23 @@ class MCTS_Node():
             action = child.action
             ucb = child._ucb_score()
 
-            action_y, action_x = action
+            action_x, action_y = action
             scores[action_y][action_x] = ucb
 
         return scores
 
     def summary(self) :
         # Figure 2 : UCB Score
-        plt.figure(2, clear=True)
-
         scores = self.get_ucb_scores()
+        #Draw_Win_Spot(scores, figure_num=2, title="UCB Score")
 
-        #title_string = str("UCB Scores : (MAX/MIN) " + str(max(scores)) + " / " + str(min(scores)))
-        
-        plt.imshow(scores)
-        plt.title("UCB Score")
-        plt.colorbar()
-
-        plt.draw()
-        plt.pause(0.1)
-
-        # Figure 1 : spot's win probability -1(Lose) ~ 1(WIN)
-        plt.figure(1, clear=True)
-
+        # Figure 1 : spot's win probability 0(Lose) ~ 1(WIN)
         win_prob_map = self.get_win_prob()
-
-        #title_string = str("win_values : (MAX/MIN) " + str(max(win_prob_map)) + " / " + str(min(win_prob_map)))
-
-        plt.imshow(win_prob_map)
-        plt.title("Win probabilities")
-        plt.colorbar()
-
-        plt.draw()
-        plt.pause(0.1)
+        Draw_Win_Spot(win_prob_map, figure_num=1, title="Win probabilities")
 
         # Figure 4 : spot's importance - based on MCTS's search time
-        plt.figure(4, clear=True)
-
         spot_prob = self.get_spot_prob()
-        
-        plt.imshow(spot_prob)
-        plt.title("Spot probabilities")
-        plt.colorbar()
-
-        plt.draw()
-        plt.pause(0.1)
+        #Draw_Win_Spot(spot_prob, figure_num=4, title="Spot probabilities")
 
         del win_prob_map
         del scores
@@ -404,7 +388,7 @@ class Root_Node(MCTS_Node) :
         self.possible_actions_calculated = False
         self.action_spot_prob_calculated = False
 
-    def play_mcts(self, n_iters=140) :
+    def play_mcts(self, n_iters=1000) :
         for i in range(0, n_iters) :
             #if (i % 128) == 0 :
             #print("mcts iteration : ", i)

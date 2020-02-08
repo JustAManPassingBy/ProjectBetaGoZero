@@ -15,6 +15,8 @@ from definitions import PARTIAL_OBSERVABILITY, MCTS_ADDITIONAL_SEARCH
 from definitions import SAVE_PERIOD
 from definitions import WIN_TRAIN_COUNT, LOSE_TRAIN_COUNT
 
+from train_samples import Train_Sample
+
 def save_latest_checkpoint_number(filename, number) :
     file = open(filename, "w")
     file.write(str(number))
@@ -48,6 +50,7 @@ class RL_Model():
             self.model.summary()
 
         self.move_count = 0
+        self.Train_Sample = Train_Sample()
 
     # Create Keras Model (Return Sequential keras layer)
     #  -- Model --
@@ -70,16 +73,16 @@ class RL_Model():
 
         last_dense = Dense(512, activation='elu')(flatten_layer)
 
-        spot_prob = Dense(SQUARE_BOARD_SIZE, kernel_regularizer=regularizers.l2(0.001), activation='elu', name="spot_prob")(last_dense)
-        win_prob = Dense(1, kernel_regularizer=regularizers.l2(0.001), activation='sigmoid', name="win_prob")(last_dense)
+        spot_prob = Dense(SQUARE_BOARD_SIZE, kernel_regularizer=regularizers.l2(1e-3), activation='elu', name="spot_prob")(last_dense)
+        win_prob = Dense(1, kernel_regularizer=regularizers.l2(1e-5), activation='sigmoid', name="win_prob")(last_dense)
 
         model = Model(inputs=input_buffer, outputs=[spot_prob, win_prob])
 
         losses = {"spot_prob" : "categorical_crossentropy",
                   "win_prob"  : "mean_squared_error"}
 
-        loss_weights = {"spot_prob" : 5e-5,
-                        "win_prob"  : 1e-5}        
+        loss_weights = {"spot_prob" : 5e-2,
+                        "win_prob"  : 1e-6}        
 
         return model , losses , loss_weights
 
@@ -110,12 +113,33 @@ class RL_Model():
         return self.model.predict(part_obs_inputs_array)
 
 
+    # Record opposite model
+    # This model will be used at mcts -> expand
+    def hang_opposite_model(self, opposite_Model) :
+        self.opposite_Model = opposite_Model
+
+        return
+
     ### Train / Test Functions ###
     # Train with results
     # winner is 1 if machine is win, else -1
     def train_func(self, winner) :
+        print("Model : ", str(self.team), " winner val : ", str(winner))
+
         winner = 0.5 + (winner * self.team * 0.5) # Sigmoid : 0 ~ 1
-        winner_array = [winner] * self.move_count
+        
+        #winner_array = [winner] * self.move_count
+        winner_start = 0.4 + 0.2 * winner
+        winner_end = winner
+        winner_div = (winner_end - winner_start) / float(self.move_count)
+
+        winner_array = []
+
+        for i in range(0, self.move_count) :
+            result = winner_start + winner_div * i
+            winner_array.append(result)
+
+        print("Calculated winner : " , str(winner))
 
         if (len(self.part_obs_inputs_array) != self.move_count) or (len(self.mcts_records) != self.move_count) :
             print("Train func, value error : ", self.move_count, len(self.part_obs_inputs_array), len(self.mcts_records))
@@ -131,7 +155,8 @@ class RL_Model():
         part_obs_inputs_array = (part_obs_inputs_array * 0.5) + 0.5
         mcts_records = np.array(self.mcts_records).reshape(-1, SQUARE_BOARD_SIZE)
 
-        print(winner_array.shape, part_obs_inputs_array.shape, mcts_records.shape)
+        self.Train_Sample.add(winner_array, part_obs_inputs_array, mcts_records)
+        winner_array, part_obs_inputs_array, mcts_records = self.Train_Sample.get()
 
         self.model.fit(part_obs_inputs_array, # Input
                        {"spot_prob" : mcts_records, "win_prob"  : winner_array}, # Outputs
@@ -179,7 +204,7 @@ class RL_Model():
 
     def save_model(self, num_train_counts) :
         save_checkpoint="result/checkpoint.txt"
-        keras_save_name= str("save_" + str(num_train_counts))
+        keras_save_name= str("result/save_" + str(num_train_counts) + "_" + str(self.team))
 
         save_latest_checkpoint_number(save_checkpoint, num_train_counts)
 
@@ -200,7 +225,7 @@ class RL_Model():
 
         restore_train_counts = int(restore_train_counts / SAVE_PERIOD) * SAVE_PERIOD
 
-        keras_load_name= str("save_" + str(restore_train_counts))
+        keras_load_name= str("result/save_" + str(restore_train_counts) + "_" + str(self.team))
 
         self.model = load_model(keras_load_name)
 
