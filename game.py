@@ -6,7 +6,7 @@ import copy
 
 from definitions import PASS_MOVE, BLACK, EMPTY, WHITE, KOMI
 from definitions import MAX_VALUE, MIN_VALUE
-from definitions import BOARD_SIZE, SQUARE_BOARD_SIZE, DEFAULT_GAME_COUNT
+from definitions import BOARD_SIZE, SQUARE_BOARD_SIZE, DEFAULT_GAME_COUNT, DEFAULT_MOVE_COUNT
 from definitions import PARTIAL_OBSERVABILITY, MCTS_ADDITIONAL_SEARCH
 
 class GameState(object):
@@ -69,6 +69,7 @@ class GameState(object):
         # Latest 4 moves
         self.latest_boards = np.zeros((PARTIAL_OBSERVABILITY, size, size), dtype=int)
 
+        self.num_stones = 0
         self.move_count = 0
 
     def get_group(self, position):
@@ -175,7 +176,7 @@ class GameState(object):
         for (x, y) in group:
             self._update_hash((x, y), self.board[x, y])
             self.board[x, y] = EMPTY
-            self.move_count -= 1
+            self.num_stones -= 1
         for (x, y) in group:
             # clear group_sets for all positions in 'group'
             self.group_sets[x][y] = set()
@@ -204,7 +205,7 @@ class GameState(object):
         return (latest_boards / 2) + 0.5
 
     def is_done(self, offset=0) :
-        return (self.move_count > (DEFAULT_GAME_COUNT + offset))
+        return ((self.num_stones > (DEFAULT_GAME_COUNT + offset)) or (self.move_count > DEFAULT_MOVE_COUNT))
 
     def copy(self):
         """get a copy of this Game state
@@ -222,7 +223,8 @@ class GameState(object):
         other.previous_hashes = self.previous_hashes.copy()
 
         other.latest_boards = self.latest_boards.copy()
-        other.move_count = self.move_count
+        other.num_stones = self.num_stones
+        other.move_count = self.move_count   
 
         # update liberty and group sets.
         #
@@ -600,6 +602,7 @@ class GameState(object):
             self.history.append(action)
             self.__legal_move_cache = None
 
+            self.num_stones += 1
             self.move_count += 1
         else:
             mv_y , mv_x = action

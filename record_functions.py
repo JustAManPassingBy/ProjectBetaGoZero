@@ -6,6 +6,8 @@ from definitions import BOARD_SIZE, SQUARE_BOARD_SIZE, DEFAULT_GAME_COUNT
 from definitions import BLACK, WHITE
 from definitions import MAX_VALUE, MIN_VALUE
 
+### Help functions for make graph / board informations to improve algorithm
+
 # Draw plot with Board
 def Draw_Plot(board, 
               figure_num=3, 

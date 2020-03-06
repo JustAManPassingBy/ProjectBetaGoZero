@@ -1,3 +1,5 @@
 *.png
 *.txt
 __pycache__
+result
+pvc_result

@@ -10,15 +10,18 @@ from definitions import PASS_MOVE, BLACK, EMPTY, WHITE, KOMI
 from definitions import MAX_VALUE, MIN_VALUE
 from definitions import BOARD_SIZE, SQUARE_BOARD_SIZE, DEFAULT_GAME_COUNT
 from definitions import PARTIAL_OBSERVABILITY, MCTS_ADDITIONAL_SEARCH
+from definitions import MAX_TURN
+from definitions import MCTS_N_ITERS
 
 from record_functions import Draw_Win_Spot
 
 class MCTS_Node():
     
-    def __init__(self, action, parent, turn, Model, GameState) :
+    def __init__(self, action, parent, turn, move_count, Model, GameState) :
         self.parent = parent # None if Root node
         self.action = action
         self.turn = turn     # BLACK : 1 , WHITE = -1
+        self.move_count = move_count
         self.Model = Model
 
         self.GameState = GameState
@@ -64,10 +67,10 @@ class MCTS_Node():
             # (1, 361) / Scalar
             if (opposite is True) or (self.turn != self.Model.get_team()):
                 # Use opposite's action_prob only
-                self.action_prob , _ = self.Model.opposite_Model.predict_func(self.GameState.show_4_latest_boards()) # spot_prob
-                _ , self.node_init_value = self.Model.predict_func(self.GameState.show_4_latest_boards()) # win_prob
+                self.action_prob , _ = self.Model.opposite_Model.predict_func(self.GameState.show_4_latest_boards(), self.move_count) # spot_prob
+                _ , self.node_init_value = self.Model.predict_func(self.GameState.show_4_latest_boards(), self.move_count) # win_prob
             else :
-                self.action_prob , self.node_init_value = self.Model.predict_func(self.GameState.show_4_latest_boards()) # spot_prob / win_prob
+                self.action_prob , self.node_init_value = self.Model.predict_func(self.GameState.show_4_latest_boards(), self.move_count) # spot_prob / win_prob
             self.node_init_value = np.asscalar(self.node_init_value)
 
             self.value_sum = self.node_init_value
@@ -81,7 +84,7 @@ class MCTS_Node():
         
         high_prob_actions = []
 
-        for i in range(num_actions) :
+        for _ in range(num_actions) :
             find = False
             times = 0
 
@@ -112,7 +115,9 @@ class MCTS_Node():
             print("Error : is_leaf in select_best_child_without_ucb")
             return None
 
-        max_vaule = MIN_VALUE
+        max_vaule = MIN_VALUE - 1.0
+
+        best_child = None
         
         for child in self.children :
                             
@@ -120,10 +125,13 @@ class MCTS_Node():
                 max_vaule = child._get_mean_value()
                 best_child = child
 
+        if (best_child is None) :
+            return None
+
         return best_child.action
 
     # UCB 1
-    def _ucb_score(self, scale=0.25, max_value=MAX_VALUE) :
+    def _ucb_score(self, scale=0.05, max_value=MAX_VALUE) :
         if (self.times_visited < 1) :
             return max_value
         
@@ -136,7 +144,7 @@ class MCTS_Node():
         if self._is_leaf() :
             return self
 
-        ucb_score_max = MIN_VALUE
+        ucb_score_max = MIN_VALUE - 1.0
         
         best_child = None
 
@@ -154,14 +162,19 @@ class MCTS_Node():
     def select_best_child(self) :
         if self._is_leaf() :
             print("Error : is_leaf in select_best_child")
-            return self
+            return None
 
-        ucb_score_max = MIN_VALUE
+        best_child = None
+        
+        ucb_score_max = MIN_VALUE - 1
 
         for child in self.children :
             if (child._ucb_score() > ucb_score_max) :
                 ucb_score_max = child._ucb_score()
                 best_child = child
+
+        if (best_child is None) :
+            return None
 
         return best_child
 
@@ -183,12 +196,16 @@ class MCTS_Node():
             new_GameState = self.GameState.copy()
             new_GameState.do_move(action) 
 
-            if (new_GameState.is_done(MCTS_ADDITIONAL_SEARCH) is True) :
-                del new_GameState
+            if (self.turn == WHITE) :
+                next_move_count = self.move_count + 1
+            else :
+                next_move_count = self.move_count
 
+            if (new_GameState.is_done(MCTS_ADDITIONAL_SEARCH) is True) or (next_move_count >= MAX_TURN):
+                del new_GameState
                 continue
 
-            self.children.append(MCTS_Node(action, self, self.turn * -1, self.Model, new_GameState))
+            self.children.append(MCTS_Node(action, self, self.turn * -1, next_move_count, self.Model, new_GameState))
 
         return self.select_best_leaf()
 
@@ -363,7 +380,7 @@ class MCTS_Node():
     #    max(max_spot.win_prob(), spot.win_prob())
     # return max_spot.win_prob()
     def get_max_win_prob(self) :
-        max_win_prob = MIN_VALUE
+        max_win_prob = MIN_VALUE - 1
 
         for child in self.children :
             if (child._get_mean_value() > max_win_prob) :
@@ -373,10 +390,11 @@ class MCTS_Node():
 
 class Root_Node(MCTS_Node) :
     
-    def __init__(self, Model, GameState, turn) :
+    def __init__(self, Model, GameState, turn, move_count) :
         self.parent = None
         self.action = None
         self.turn = turn # Me : 1 , Enemy = -1 -> 1 at root (my turn)
+        self.move_count = move_count # Increased only white -> black
         self.Model = Model
         self.GameState = GameState
 
@@ -388,7 +406,7 @@ class Root_Node(MCTS_Node) :
         self.possible_actions_calculated = False
         self.action_spot_prob_calculated = False
 
-    def play_mcts(self, n_iters=1000) :
+    def play_mcts(self, n_iters=MCTS_N_ITERS) :
         for i in range(0, n_iters) :
             #if (i % 128) == 0 :
             #print("mcts iteration : ", i)
