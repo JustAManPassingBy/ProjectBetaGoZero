@@ -40,7 +40,7 @@ class PLAYER_Model():
     # Get Current Board's N(PARTIAL_OBSERVABILITY) latest states
     # Search Proper movement with MCTS(mcts.py)
     # return Next Stone's state and win probability
-    def get_move(self, my_color, GameState) :
+    def get_move(self, my_color, GameState, debug_mode=0) :
         input_array = input("Get None or x , y : ").split()
         
         if (len(input_array) is 1) :
@@ -51,5 +51,7 @@ class PLAYER_Model():
             print(ret_val)
             return ret_val, 1.0
 
+    def get_move_debug(self, my_color, GameState, debug_mode=0) :
+        return self.get_move(my_color, GameState)
 
 

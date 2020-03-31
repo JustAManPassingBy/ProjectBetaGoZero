@@ -16,8 +16,9 @@ white_model.set_team(WHITE)
 black_model.hang_opposite_model(white_model)
 white_model.hang_opposite_model(black_model)
 
-train_black = black_model.restore_model(restore_train_counts=None)
-train_white = white_model.restore_model(restore_train_counts=None)
+# Restore models from "restore_point"
+train_black = black_model.restore_model(restore_point=None)
+train_white = white_model.restore_model(restore_point=None)
 
 train_count = min(train_black, train_white)
 
@@ -26,6 +27,7 @@ white_win = 0
 
 while (True) :  
     # Train count increases
+    print("Train : ", train_count)
     train_count += 1
 
     # Prepare game
@@ -54,6 +56,8 @@ while (True) :
 
 
     del black_win_prob, board, white_win_prob
+
+    print("winner value is ", str(winner))
 
     # Train
     black_model.train_func(winner)

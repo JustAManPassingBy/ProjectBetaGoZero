@@ -8,8 +8,8 @@ from matplotlib import pyplot as plt
 
 from definitions import PASS_MOVE, BLACK, EMPTY, WHITE, KOMI
 from definitions import MAX_VALUE, MIN_VALUE
-from definitions import BOARD_SIZE, SQUARE_BOARD_SIZE, DEFAULT_GAME_COUNT
-from definitions import PARTIAL_OBSERVABILITY, MCTS_ADDITIONAL_SEARCH
+from definitions import BOARD_SIZE, SQUARE_BOARD_SIZE, NUM_STONES_TO_END_GAME
+from definitions import PARTIAL_OBSERVABILITY, ADDITIONAL_SEARCH_COUNT_DURING_MCTS
 from definitions import MAX_TURN
 from definitions import MCTS_N_ITERS
 
@@ -40,14 +40,14 @@ class MCTS_Node():
     def _is_root(self) :
         return self.parent is None
 
-    def _get_mean_value(self) :
+    def _get_mean_value(self,
+                        multi_value_sum=0.95,
+                        multi_value_min=0.05) :
         self._calculate_action_spot_prob()
 
-        '''
-        return self.value_sum / self.times_visited # Use Average
-        '''
+        value_average =  self.value_sum / self.times_visited # Use Average
 
-        return self.value_min
+        return (multi_value_sum * value_average + multi_value_min * self.value_min)
 
     def _calculate_possible_actions(self) :
 
@@ -61,7 +61,7 @@ class MCTS_Node():
             self.possible_actions_calculated = True
 
     def _calculate_action_spot_prob(self,
-                                    opposite=False) :
+                                    opposite=True) :
 
         if (self.action_spot_prob_calculated is False) :
             # (1, 361) / Scalar
@@ -201,7 +201,7 @@ class MCTS_Node():
             else :
                 next_move_count = self.move_count
 
-            if (new_GameState.is_done(MCTS_ADDITIONAL_SEARCH) is True) or (next_move_count >= MAX_TURN):
+            if (new_GameState.is_done(ADDITIONAL_SEARCH_COUNT_DURING_MCTS) is True) :
                 del new_GameState
                 continue
 
@@ -271,11 +271,6 @@ class MCTS_Node():
 
 
     def propagate(self, update_value, p_value=0.1) :
-        # Propagate : Latest results will reflect much precise prediction
-        # Therefore, new_value = value_old * p + update_value * (1 - p)  
-        # new_value = (self.value_sum * p_value) + (update_value * (1 - p_value))
-        #self.value_sum = new_value 
-        
         if (float(update_value) is 0.0) :
             return
 
@@ -288,6 +283,8 @@ class MCTS_Node():
         if not self._is_root() :
             self.parent.propagate(update_value)
 
+        return
+
     def delete(self) :
         if (len(self.children) is not 0) :
             for child in self.children :
@@ -295,6 +292,18 @@ class MCTS_Node():
 
         del self.GameState
         del self
+
+        return
+
+    def get_spot_count(self) :
+        spot_count = np.zeros([BOARD_SIZE, BOARD_SIZE], dtype=int)
+
+        for child in self.children :
+            action_x, action_y = child.action
+
+            spot_count[action_y][action_x] = child.times_visited
+
+        return spot_count
 
     def get_spot_prob(self) :
         spot_prob = np.zeros([BOARD_SIZE, BOARD_SIZE])
@@ -374,11 +383,9 @@ class MCTS_Node():
         del scores
         del spot_prob
 
+        return
+
     # From current state, get maximum win probability
-    #  - Pseuco code
-    # for spot in Board :
-    #    max(max_spot.win_prob(), spot.win_prob())
-    # return max_spot.win_prob()
     def get_max_win_prob(self) :
         max_win_prob = MIN_VALUE - 1
 
@@ -387,6 +394,7 @@ class MCTS_Node():
                 max_win_prob = child._get_mean_value()
 
         return max_win_prob
+
 
 class Root_Node(MCTS_Node) :
     
@@ -413,7 +421,7 @@ class Root_Node(MCTS_Node) :
             
             best_leaf = self.select_best_leaf()
 
-            if (best_leaf.GameState.is_done(MCTS_ADDITIONAL_SEARCH) is True) :
+            if (best_leaf.GameState.is_done(ADDITIONAL_SEARCH_COUNT_DURING_MCTS) is True) :
                 print(" !! warning : access IS_DONE !!")
                 best_leaf.propagate(0.0)
 

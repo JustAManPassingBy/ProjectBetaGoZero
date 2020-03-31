@@ -6,8 +6,8 @@ import copy
 
 from definitions import PASS_MOVE, BLACK, EMPTY, WHITE, KOMI
 from definitions import MAX_VALUE, MIN_VALUE
-from definitions import BOARD_SIZE, SQUARE_BOARD_SIZE, DEFAULT_GAME_COUNT, DEFAULT_MOVE_COUNT
-from definitions import PARTIAL_OBSERVABILITY, MCTS_ADDITIONAL_SEARCH
+from definitions import BOARD_SIZE, SQUARE_BOARD_SIZE, NUM_STONES_TO_END_GAME, NUM_MOVES_TO_END_GAME
+from definitions import PARTIAL_OBSERVABILITY, ADDITIONAL_SEARCH_COUNT_DURING_MCTS
 
 class GameState(object):
     """State of a game of Go and some basic functions to interact with it
@@ -201,11 +201,13 @@ class GameState(object):
 
     def show_4_latest_boards(self) :
         # deepcopy latest boards
-        latest_boards = copy.deepcopy(self.latest_boards) 
+        latest_boards = copy.deepcopy(self.latest_boards)
+
+        # latest board normalization
         return (latest_boards / 2) + 0.5
 
     def is_done(self, offset=0) :
-        return ((self.num_stones > (DEFAULT_GAME_COUNT + offset)) or (self.move_count > DEFAULT_MOVE_COUNT))
+        return ((self.num_stones > (NUM_STONES_TO_END_GAME + offset)) or (self.move_count > NUM_MOVES_TO_END_GAME))
 
     def copy(self):
         """get a copy of this Game state

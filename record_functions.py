@@ -2,7 +2,7 @@ import numpy as np
 import copy
 from matplotlib import pyplot as plt
 
-from definitions import BOARD_SIZE, SQUARE_BOARD_SIZE, DEFAULT_GAME_COUNT
+from definitions import BOARD_SIZE, SQUARE_BOARD_SIZE
 from definitions import BLACK, WHITE
 from definitions import MAX_VALUE, MIN_VALUE
 

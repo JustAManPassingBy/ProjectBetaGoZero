@@ -16,8 +16,8 @@ white_model.set_team(WHITE)
 black_model.hang_opposite_model(white_model)
 white_model.hang_opposite_model(black_model)
 
-train_black = black_model.restore_model(restore_train_counts=None)
-train_white = white_model.restore_model(restore_train_counts=None)
+train_black = black_model.restore_model(restore_point=None)
+train_white = white_model.restore_model(restore_point=None)
 
 your_model = player_model.PLAYER_Model()
 #your_model_two = player_model.PLAYER_Model()
@@ -54,7 +54,7 @@ while (True) :
         game_white_model = your_model
 
     # Play game
-    winner, board, _ , black_win_prob, white_win_prob, black_go, white_go = game_colosseum.Game_Collosseum(game_black_model, game_white_model, play_count)
+    winner, board, _ , black_win_prob, white_win_prob, black_go, white_go = game_colosseum.Game_Collosseum(game_black_model, game_white_model, play_count, debug_mode=1)
 
     # Record History
     if (winner is BLACK) :
