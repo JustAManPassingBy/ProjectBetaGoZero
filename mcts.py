@@ -15,11 +15,20 @@ from definitions import MCTS_N_ITERS
 
 from record_functions import Draw_Win_Spot
 
+# Each node means specific move
+#            (Root Node)
+#           Initial state
+#             /       \
+#         (Node 1)   (Node 2)
+#          Move 1     Move 2
+#          /  \
+#           ... 
+
 class MCTS_Node():
     
     def __init__(self, action, parent, turn, move_count, Model, GameState) :
         self.parent = parent # None if Root node
-        self.action = action
+        self.action = action # Action (X, Y)
         self.turn = turn     # BLACK : 1 , WHITE = -1
         self.move_count = move_count
         self.Model = Model
@@ -41,8 +50,8 @@ class MCTS_Node():
         return self.parent is None
 
     def _get_mean_value(self,
-                        multi_value_sum=0.95,
-                        multi_value_min=0.05) :
+                        multi_value_sum=0.6,
+                        multi_value_min=0.4) :
         self._calculate_action_spot_prob()
 
         value_average =  self.value_sum / self.times_visited # Use Average
@@ -56,7 +65,7 @@ class MCTS_Node():
 
             self._calculate_action_spot_prob()
 
-            self.high_prob_actions = self._get_high_prob_actions()
+            self.high_prob_actions = self._get_high_prob_actions_range_from_max()
 
             self.possible_actions_calculated = True
 
@@ -79,36 +88,123 @@ class MCTS_Node():
 
             self.action_spot_prob_calculated = True
 
-    def _get_high_prob_actions(self, num_actions=10) :
+
+    ##  Functions to get high probability actions
+    def _get_high_prob_actions(self, num_actions=15) :
         self._calculate_action_spot_prob()
         
         high_prob_actions = []
 
-        for _ in range(num_actions) :
-            find = False
-            times = 0
+        highest_sort = np.array(self.action_prob.flatten).argsort()
 
-            while (find is False) :
-                times += 1
+        for i in range(len(highest_sort)) :
+            if (num_actions == 0) :
+                break
 
-                highest = self.action_prob.flatten().argmax()
-                prev_highest_value = self.action_prob[0][highest]
-                self.action_prob[0][highest] = MIN_VALUE
+            highest = self.action_prob[0][highest_sort[i]]
 
+            # None : None action
+            if (highest == SQUARE_BOARD_SIZE) :
+                highest_move = None
+            # Else : action
+            else :
                 highest_y = int(highest / BOARD_SIZE)
-                highest_x = highest % BOARD_SIZE
+                highest_x = int(highest % BOARD_SIZE)
 
-                highest_move = (highest_y , highest_x)
-                
-                if (prev_highest_value <= MIN_VALUE) :
-                    find = True
+                # !! Move for action is (X, Y), not (Y, X)
+                highest_move = (highest_x, highest_y)
 
-                if (highest_move in self.possible_actions) :
-                    find = True
-                    high_prob_actions.append(highest_move)
-
+            if (highest_move in self.possible_actions) and (highest_move is not None):
+                num_actions -= 1
+                high_prob_actions.append(highest_move)
+            elif (highest_move is None) :
+                num_actions -= 1
 
         return high_prob_actions
+
+    def _get_high_prob_actions_exceed_threshold(self, threshold=float(1 / SQUARE_BOARD_SIZE + 1)) :
+        self._calculate_action_spot_prob()
+        
+        high_prob_actions = []
+
+        highest_list = np.array(self.action_prob.flatten())
+        highest_sort = highest_list.argsort()
+
+        for i in range(len(highest_sort)) :
+            if (highest_list[highest_sort[i]] < threshold) :
+                break
+
+            highest = highest_list[highest_sort[i]]
+
+            # None : None action
+            if (highest == SQUARE_BOARD_SIZE) :
+                highest_move = None
+            # Else : action
+            else :
+                highest_y = int(highest / BOARD_SIZE)
+                highest_x = int(highest % BOARD_SIZE)
+
+                # !! Move for action is (X, Y), not (Y, X)
+                highest_move = (highest_x, highest_y)
+
+            if (highest_move in self.possible_actions) and (highest_move is not None):
+                high_prob_actions.append(highest_move)
+            
+        return high_prob_actions
+
+    def _get_high_prob_actions_range_from_max(self, limit=
+    0.1) :
+        self._calculate_action_spot_prob()
+        
+        high_prob_actions = []
+
+        highest_list = np.array(self.action_prob.flatten())
+        highest_sort = highest_list.argsort()
+
+        for i in range(len(highest_sort)) :
+            highest = highest_list[highest_sort[i]]
+
+            if (i == 0) :
+                action_limit = highest - limit
+
+            if (highest < action_limit) :
+                break
+
+            # None : None action
+            if (highest == SQUARE_BOARD_SIZE) :
+                highest_move = None
+            # Else : action
+            else :
+                highest_y = int(highest / BOARD_SIZE)
+                highest_x = int(highest % BOARD_SIZE)
+
+                # !! Move for action is (X, Y), not (Y, X)
+                highest_move = (highest_x, highest_y)
+
+            if (highest_move in self.possible_actions) and (highest_move is not None):
+                high_prob_actions.append(highest_move)
+            
+        return high_prob_actions
+
+
+    def select_best_child(self) :
+        if self._is_leaf() :
+            print("Error : is_leaf in select_best_child")
+            return None
+
+        best_child = None
+        
+        ucb_score_max = MIN_VALUE - 1
+
+        for child in self.children :
+            if (child._ucb_score() > ucb_score_max) :
+                ucb_score_max = child._ucb_score()
+                best_child = child
+
+        if (best_child is None) :
+            return None
+
+        return best_child
 
     def select_best_child_without_ucb(self) :
         if self._is_leaf() :
@@ -139,7 +235,7 @@ class MCTS_Node():
 
         return self._get_mean_value() + scale * ucb
 
-
+    ## select best leaf, with ucb
     def select_best_leaf(self) :
         if self._is_leaf() :
             return self
@@ -153,33 +249,48 @@ class MCTS_Node():
                 ucb_score_max = child._ucb_score()
                 best_child = child
 
+        # Why not_leaf node has no child?
         if (best_child is None) :
             return self
 
         return best_child.select_best_leaf()
 
+    # Depth should be start from 0
+    def select_best_and_worst_leaf(self, layer_depth=0) :
+        if (self._is_leaf()) :
+            return self, layer_depth
 
-    def select_best_child(self) :
-        if self._is_leaf() :
-            print("Error : is_leaf in select_best_child")
-            return None
+        # Even, our turn
+        if (layer_depth % 2) == 0 :
+            ucb_score_max = MIN_VALUE - 1.0
 
-        best_child = None
-        
-        ucb_score_max = MIN_VALUE - 1
+            best_child = None
 
-        for child in self.children :
-            if (child._ucb_score() > ucb_score_max) :
-                ucb_score_max = child._ucb_score()
-                best_child = child
+            for child in self.children :
+                if (child._ucb_score() > ucb_score_max) :
+                    ucb_score_max = child._ucb_score()
+                    best_child = child
 
-        if (best_child is None) :
-            return None
+            if (best_child is None) :
+                return self, layer_depth
 
-        return best_child
+        # Odd, enemy's turn
+        else :
+            ucb_score_min = MAX_VALUE + 1.0
+            best_child = None
+
+            for child in self.children :
+                if (child._ucb_score() < ucb_score_min) :
+                    ucb_score_min = child._ucb_score()
+                    best_child = child
+
+            if (best_child is None) :
+                return self, layer_depth
+
+        return best_child.select_best_and_worst_leaf(layer_depth=(layer_depth + 1))
 
 
-    def expand(self) :
+    def expand(self, layer_depth=0) :
         if (len(self.children) is not 0) :
             print("Error : expand node is not leaf")
             return self.select_best_leaf()
@@ -187,12 +298,16 @@ class MCTS_Node():
         self._calculate_possible_actions()
         self._calculate_action_spot_prob()
 
-        if (self._is_root() is True) :
+        if (self._is_root() is True)  :
             actions_space = self.possible_actions
         else :
             actions_space = self.high_prob_actions
 
         for action in actions_space :
+            # Skip if None
+            if (action is None) :
+                continue
+
             new_GameState = self.GameState.copy()
             new_GameState.do_move(action) 
 
@@ -207,7 +322,7 @@ class MCTS_Node():
 
             self.children.append(MCTS_Node(action, self, self.turn * -1, next_move_count, self.Model, new_GameState))
 
-        return self.select_best_leaf()
+        return self.select_best_and_worst_leaf(layer_depth=layer_depth)
 
 
     def rollout(self, t_max=1) :
@@ -306,14 +421,15 @@ class MCTS_Node():
         return spot_count
 
     def get_spot_prob(self) :
-        spot_prob = np.zeros([BOARD_SIZE, BOARD_SIZE])
+        spot_prob = np.zeros([SQUARE_BOARD_SIZE + 1])
         
         summarized = 0.0
 
         for child in self.children :
             action_x, action_y = child.action
+            action_idx = action_y * BOARD_SIZE + action_x
 
-            spot_prob[action_y][action_x] = child.times_visited
+            spot_prob[action_idx] = child.times_visited
             summarized += child.times_visited
 
         if (summarized == 0.0) :
@@ -321,25 +437,6 @@ class MCTS_Node():
 
         return (spot_prob / summarized)
 
-    def get_spot_with_prob(self) :
-        spot_list = []
-        spot_prob_list = []
-
-        summarized = 0.0
-
-        for child in self.children :
-            spot_list.append(child.action)
-            spot_prob_list.append(child.times_visited)
-
-            summarized += child.times_visited
-
-        if (summarized == 0.0) :
-            summarized = 1.0
-
-        for i in range(0, len(spot_prob_list)) :
-            spot_prob_list[i] /= summarized
-
-        return spot_list, spot_prob_list
 
     def get_win_prob(self) :
         win_prob_map = np.zeros([BOARD_SIZE, BOARD_SIZE])
@@ -419,13 +516,13 @@ class Root_Node(MCTS_Node) :
             #if (i % 128) == 0 :
             #print("mcts iteration : ", i)
             
-            best_leaf = self.select_best_leaf()
+            best_leaf, depth = self.select_best_and_worst_leaf()
 
             if (best_leaf.GameState.is_done(ADDITIONAL_SEARCH_COUNT_DURING_MCTS) is True) :
                 print(" !! warning : access IS_DONE !!")
                 best_leaf.propagate(0.0)
 
             else :
-                new_best_leaf = best_leaf.expand()
+                new_best_leaf, _ = best_leaf.expand(layer_depth=depth)
                 total_rewards = new_best_leaf.rollout()
                 new_best_leaf.propagate(total_rewards)

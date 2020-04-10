@@ -85,7 +85,7 @@ class RL_Model():
         dense1 = Dense(4096, activation='elu')(flatten_layer)
         last_dense = Dense(1024, activation='elu')(dense1)
 
-        spot_prob = Dense(SQUARE_BOARD_SIZE, kernel_regularizer=regularizers.l2(1e-2), activation='sigmoid', name="spot_prob")(last_dense)
+        spot_prob = Dense((SQUARE_BOARD_SIZE + 1), kernel_regularizer=regularizers.l2(1e-2), activation='sigmoid', name="spot_prob")(last_dense)
         win_prob = Dense(1, kernel_regularizer=regularizers.l2(1e-3), activation='sigmoid', name="win_prob")(last_dense)
 
         model = Model(inputs=input_buffer, outputs=[spot_prob, win_prob])
@@ -93,8 +93,8 @@ class RL_Model():
         losses = {"spot_prob" : "categorical_crossentropy",
                   "win_prob"  : "mean_squared_error"}
 
-        loss_weights = {"spot_prob" : 1e-3,
-                        "win_prob"  : 1e-5}        
+        loss_weights = {"spot_prob" : 1e-4,
+                        "win_prob"  : 1e-6}        
 
         return model , losses , loss_weights
 
@@ -142,14 +142,13 @@ class RL_Model():
         print("Model : ", str(self.team), " winner val : ", str(winner))
 
         winner = winner * self.team
-
         winner = 0.5 + (winner * 0.5) # Sigmoid : [-1 ~ 1] -> [0 ~ 1]
         
         # - Increasing win scores.
         #  At the first of the game, win probability is not precise.
         #  And when game reaches to end, win probability is obvious.
         #  So decreasing "win probability" at the beginning of the game, and maximize it at end of the game.
-        # (No use) winner_start = 0.4 + 0.2 * winner # 0.6 for win , 0.4 for lose
+        #winner_start = 0.2 + 0.6 * winner # 0.6 for win , 0.4 for lose
         winner_start = winner
         winner_end = winner
         winner_div = (winner_end - winner_start) / float(self.move_count)
@@ -160,6 +159,7 @@ class RL_Model():
             result = winner_start + winner_div * i
             winner_array.append(result)
 
+        # - Error check
         if (len(self.part_obs_inputs_array) != self.move_count) or (len(self.mcts_records) != self.move_count) :
             print("Train func, value error : ", self.move_count, len(self.part_obs_inputs_array), len(self.mcts_records))
             return
@@ -170,11 +170,10 @@ class RL_Model():
         else :
             try_epochs = LOSE_TRAIN_COUNT
             
-        winner_array = np.array(winner_array)
         # - Change (-1, 4, X, X)[Channel first] to (-1, X, X, 4)[Channel last]
         part_obs_inputs_array = np.transpose(np.array(self.part_obs_inputs_array), (0, 2, 3, 1))
-
-        mcts_records = np.array(self.mcts_records).reshape(-1, SQUARE_BOARD_SIZE)
+        mcts_records = np.array(self.mcts_records).reshape(-1, SQUARE_BOARD_SIZE + 1)
+        winner_array = np.array(winner_array)
 
         print("Train Once")
 
@@ -207,14 +206,16 @@ class RL_Model():
             return self.get_move_debug(my_color, GameState, debug_mode)
 
         # - Check return condition : Obviously game is end.
-        if (GameState.is_done() is True) or (self.move_count >= (MAX_TURN - ADDITIONAL_SEARCH_COUNT_DURING_MCTS)) :
+        if (GameState.is_done() is True) :
             return None, None
 
+        # - Get Board's latest #'s shape (Input)
         part_obs_inputs = GameState.show_4_latest_boards()
 
-        # - Create MCTS & MCTS play
+        # - Copy Gamestate
         copy_GameState = GameState.copy()
 
+        # - MCTS Search(play)
         root_node = Root_Node(self, copy_GameState, my_color, self.move_count)
         root_node.play_mcts()
 
@@ -222,10 +223,10 @@ class RL_Model():
         ret_locate = root_node.select_best_child_without_ucb()
 
         # !! Check ret_locate is none 
-        # !! It's better why this condition was occured.
         if (ret_locate is None) :
-            return None, None
+            raise(ValueError)
 
+        # - Record current move's database
         mcts_move_prob = root_node.get_spot_prob().flatten()
 
         root_node.summary()

@@ -207,6 +207,15 @@ class GameState(object):
         return (latest_boards / 2) + 0.5
 
     def is_done(self, offset=0) :
+        if (len(self.history) > 1) :
+            if ((self.history[-1] is PASS_MOVE) and 
+               (self.history[-2] is PASS_MOVE) and
+               (self.current_player == WHITE)) :
+                self.is_end_of_game = True
+        
+        if (self.is_end_of_game is True) :
+            return True
+
         return ((self.num_stones > (NUM_STONES_TO_END_GAME + offset)) or (self.move_count > NUM_MOVES_TO_END_GAME))
 
     def copy(self):

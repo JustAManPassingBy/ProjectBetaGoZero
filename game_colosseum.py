@@ -32,7 +32,7 @@ def Game_Collosseum(black_model, white_model, game_count, debug_mode=0) : # Debu
     # History buffers
     white_win_prob_history_buffer = []
     black_win_prob_history_buffer = []
-    move_history_history_buffer = [] # Start from black
+    move_history_history_buffer = [] # Initial player is black
     
     try :
         while (True) :
@@ -72,20 +72,5 @@ def Game_Collosseum(black_model, white_model, game_count, debug_mode=0) : # Debu
     
     # Exception (Error handling)
     except KeyboardInterrupt :
-        board = np.array(Go_Game.show_result())
-
-        print(Go_Game.show_result())
-        
-        current_player = Go_Game.get_current_player()
-        print("Illegal move for user : ", current_player)
-
-        winner = current_player * -1
-
-        # infinite loop
-        a = 0
-        while(True) :
-            a += 1
-        
-        del Go_Game
-        return winner
+        return
     

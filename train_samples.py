@@ -113,7 +113,7 @@ class Train_Sample() :
     def decay(self, 
               start_idx = None,
               end_idx = None,
-              decay_ratio = 0.98,
+              decay_ratio = 0.999,
               sample_index=0) : # Default sample index should be 0
         if (start_idx is None) :
             start_idx = 0

@@ -6,6 +6,8 @@ from definitions import BLACK, WHITE
 
 from record_functions import Draw_Plot, Draw_Win_Graph, Record
 
+# PVC : Player VS Computer
+
 # Setting PC
 black_model = model.RL_Model()
 white_model = model.RL_Model()

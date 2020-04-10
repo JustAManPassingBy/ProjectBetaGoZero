@@ -52,7 +52,7 @@ while (True) :
         # - Calculate Proper action
         # - Append prob_history
 
-        if (move_count == 30) or (move_count == 0) or (move_count == 1) or (move_count == 31) :
+        if (move_count != -1) :
             if (current_player is BLACK) :
                 action, win_prob = black_model.get_move_debug(BLACK, Go_Game, debug_mode=1)
                 black_win_prob_history_buffer.append(win_prob)
@@ -81,7 +81,7 @@ while (True) :
         move_history_history_buffer.append(action)
             
         # - Act move & get results 
-        # - Break while if game is finished
+        # - Break if game is finished
         if (Go_Game.do_move(action) is True) :
             winner, black_go, white_go = Go_Game.get_winner()
 
