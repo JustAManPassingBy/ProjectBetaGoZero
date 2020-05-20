@@ -15,8 +15,12 @@ from definitions import PARTIAL_OBSERVABILITY, ADDITIONAL_SEARCH_COUNT_DURING_MC
 from definitions import SAVE_PERIOD
 from definitions import WIN_TRAIN_COUNT, LOSE_TRAIN_COUNT
 from definitions import MAX_TURN
+from definitions import RANDOM_MOVE_PROB
 
 from train_samples import Train_Sample
+
+from game_hub import *
+from layer import *
 
 # Save latest checkpoint number (for restores)
 def save_latest_checkpoint_number(filename, number) :
@@ -61,42 +65,9 @@ class RL_Model():
         self.Train_Sample = Train_Sample()
 
     # Create Keras Model (Return Sequential keras layer)
-    #  -- Model --
-    #  - if Board size is 19
-    #  1. Input   : 19 x 19 x PARTIAL_OBSERVABILITY
-    #  2. Conv 1  : 19 x 19 x 8  , 8  filters, 3 x 3 , stride (1, 1)
-    #  3. Conv 2  : 10 x 19 x 16 , 16 filters, 3 x 3 , stride (2, 1)
-    #  4. Conv 3  : 10 x 19 x 32 , 32 filters, 3 x 3 , stride (1, 1)
-    #  5. Conv 4  : 10 x 10 x 64 , 64 filters, 3 x 3 , stride (1, 2)
-    #  5. Flatten
-    #  6. Dense 1 : 4096, Relu
-    #  6. Dense 2 : 1024, Relu
-    #  7. Output : (Spot -  [0 : 19 x 19] - 0 ~ 1) / (WinProb - [-1 : 1] - -1 ~ 1
     def _create_model(self, model_name) :
-        input_buffer = Input(shape=(BOARD_SIZE, BOARD_SIZE, PARTIAL_OBSERVABILITY))
- 
-        conv1 = Conv2D(8, (3, 3), padding='same', strides=(1, 1), activation='elu')(input_buffer)
-        conv2 = Conv2D(16, (3, 3), padding='same', strides=(2, 1), activation='elu')(conv1)
-        conv3 = Conv2D(32, (3, 3), padding='same', strides=(1, 1), activation='elu')(conv2)
-        conv4 = Conv2D(64, (3, 3), padding='same', strides=(1, 2), activation='elu')(conv3)
-        
-        flatten_layer = Flatten()(conv4)
-
-        dense1 = Dense(4096, activation='elu')(flatten_layer)
-        last_dense = Dense(1024, activation='elu')(dense1)
-
-        spot_prob = Dense((SQUARE_BOARD_SIZE + 1), kernel_regularizer=regularizers.l2(1e-2), activation='sigmoid', name="spot_prob")(last_dense)
-        win_prob = Dense(1, kernel_regularizer=regularizers.l2(1e-3), activation='sigmoid', name="win_prob")(last_dense)
-
-        model = Model(inputs=input_buffer, outputs=[spot_prob, win_prob])
-
-        losses = {"spot_prob" : "categorical_crossentropy",
-                  "win_prob"  : "mean_squared_error"}
-
-        loss_weights = {"spot_prob" : 1e-4,
-                        "win_prob"  : 1e-6}        
-
-        return model , losses , loss_weights
+        # Define at layer.py
+        return create_keras_layer()
 
 
     ### Set / Get Functions ###
@@ -141,15 +112,17 @@ class RL_Model():
     def train_func(self, winner) :
         print("Model : ", str(self.team), " winner val : ", str(winner))
 
-        winner = winner * self.team
+        # Black win : 1 -> 1
+        # White Win : -1 -> 0
+        # Same win prob = 0 -> 0.5
         winner = 0.5 + (winner * 0.5) # Sigmoid : [-1 ~ 1] -> [0 ~ 1]
         
         # - Increasing win scores.
         #  At the first of the game, win probability is not precise.
         #  And when game reaches to end, win probability is obvious.
         #  So decreasing "win probability" at the beginning of the game, and maximize it at end of the game.
-        #winner_start = 0.2 + 0.6 * winner # 0.6 for win , 0.4 for lose
-        winner_start = winner
+        winner_start = 0.2 + 0.6 * winner # 0.6 for win , 0.4 for lose
+        #winner_start = winner
         winner_end = winner
         winner_div = (winner_end - winner_start) / float(self.move_count)
 
@@ -182,15 +155,17 @@ class RL_Model():
                     epochs=try_epochs)
 
         print("Add New samples into sample pool")
-        self.Train_Sample.decay()
+        self.Train_Sample.decay(sample_index=WHITE)
+        self.Train_Sample.decay(sample_index=BLACK)
 
         for idx in range(0, self.move_count) :
             if (idx >= MAX_TURN) :
                 break
 
-            self.Train_Sample.add(winner_array[idx], part_obs_inputs_array[idx], mcts_records[idx])
+            # Seperate black win's pool and white win's pool
+            self.Train_Sample.add(winner_array[idx], part_obs_inputs_array[idx], mcts_records[idx], int(winner))
 
-        t_winner_array, t_part_obs_inputs_array, t_mcts_records = self.Train_Sample.get()
+        t_winner_array, t_part_obs_inputs_array, t_mcts_records = self.Train_Sample.get_all()
 
         print("Train")
         self.model.fit(t_part_obs_inputs_array, # Input
@@ -207,10 +182,11 @@ class RL_Model():
 
         # - Check return condition : Obviously game is end.
         if (GameState.is_done() is True) :
-            return None, None
+            return None, 0.0, []
 
         # - Get Board's latest #'s shape (Input)
-        part_obs_inputs = GameState.show_4_latest_boards()
+        part_obs_inputs = get_game_state(GameState)
+        #part_obs_inputs = GameState.show_4_latest_boards()
 
         # - Copy Gamestate
         copy_GameState = GameState.copy()
@@ -219,12 +195,15 @@ class RL_Model():
         root_node = Root_Node(self, copy_GameState, my_color, self.move_count)
         root_node.play_mcts()
 
-        # - From results of MCTS Search, get best move
-        ret_locate = root_node.select_best_child_without_ucb()
+        # - Get best move(action / child
+        # )
+        ret_locate, ret_actions = root_node.select_best_child_without_ucb(my_color)
 
-        # !! Check ret_locate is none 
+        print(ret_actions)
+
+        # Check whether return is none
         if (ret_locate is None) :
-            raise(ValueError)
+            return None, 0.0, []
 
         # - Record current move's database
         mcts_move_prob = root_node.get_spot_prob().flatten()
@@ -247,7 +226,7 @@ class RL_Model():
 
         self.move_count += 1
 
-        return ret_locate, win_prob
+        return ret_locate, win_prob, ret_actions
 
     # return debug function specified in "debug_mode"
     # If debug_mode is 0, return get_move()
@@ -259,7 +238,8 @@ class RL_Model():
             if (GameState.is_done() is True) or (self.move_count >= (MAX_TURN - ADDITIONAL_SEARCH_COUNT_DURING_MCTS)) :
                 return None, None
 
-            part_obs_inputs = GameState.show_4_latest_boards()
+            part_obs_inputs = get_game_state(GameState)
+            #part_obs_inputs = GameState.show_4_latest_boards()
 
             # - Create MCTS & MCTS play
             copy_GameState = GameState.copy()
@@ -289,9 +269,14 @@ class RL_Model():
             print(" -----------")
             print(root_node.get_spot_count())
 
+            print("-- After train 3000 -- ")
+            root_node.play_mcts(n_iters=3000)
+            print(np.around(root_node.get_win_prob(), decimals=3))
+            print(" -----------")
+            print(root_node.get_spot_count())
 
-            # - From results of MCTS Search, get best move
-            ret_locate = root_node.select_best_child_without_ucb()
+            # - From results of MCTS Search, get best move or random move
+            ret_locate, ret_actions = root_node.select_best_child_without_ucb()
 
             mcts_move_prob = root_node.get_spot_prob().flatten()
 
@@ -313,7 +298,7 @@ class RL_Model():
 
             self.move_count += 1
 
-            return ret_locate, win_prob
+            return ret_locate, win_prob, ret_actions
 
         else :
             print("[Error] why debug_mode is 0 at debug function ??")

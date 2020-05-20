@@ -4,10 +4,13 @@ import copy
 from definitions import MAX_SAMPLE_COUNT
 from definitions import MAX_TURN
 from definitions import PARTIAL_OBSERVABILITY
+from definitions import NUM_SAMPLE_POOLS
 
 
 # These class stacks train samples for each game, and return stacked train samples.
 # You can limit number of sample swith "MAX_SAMPLE_COUNT"
+
+# You can set array pool with "NUM_SAMPLE_POOLS"
 
 class Train_Sample() :
     def __init__(self) :
@@ -19,7 +22,7 @@ class Train_Sample() :
         self.part_obs_inputs_array = []
         self.mcts_records = []
 
-        for _ in range(0, 1) :
+        for _ in range(0, NUM_SAMPLE_POOLS) : # White Win : 0 / Black Win : 1
             self.winner_array.append([])
             self.num_train_item.append(0)
             self.part_obs_inputs_array.append([])
@@ -130,3 +133,15 @@ class Train_Sample() :
     def get(self,
             sample_index=0) : # Default sample index should be 0
         return np.asarray(self.winner_array[sample_index]), np.asarray(self.part_obs_inputs_array[sample_index]) , np.asarray(self.mcts_records[sample_index])
+
+    def get_all(self) :
+        all_winner_array = []
+        all_part_obs_inputs_array = []
+        all_mcts_records = []
+
+        for idx in range(0, NUM_SAMPLE_POOLS) :
+            all_winner_array.extend(self.winner_array[idx])
+            all_part_obs_inputs_array.extend(self.part_obs_inputs_array[idx])
+            all_mcts_records.extend(self.mcts_records[idx])
+
+        return np.asarray(all_winner_array), np.asarray(all_part_obs_inputs_array) , np.asarray(all_mcts_records)
