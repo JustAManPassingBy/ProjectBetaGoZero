@@ -34,7 +34,7 @@ def Game_Collosseum(black_model, white_model, game_count, debug_mode=0) : # Debu
     # History buffers
     white_win_prob_history_buffer = []
     black_win_prob_history_buffer = []
-    move_history_history_buffer = [] # Initial player is black
+    move_history_history_buffer = [] # First player is black
     
     try :
         while (True) :

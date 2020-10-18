@@ -37,7 +37,7 @@ class Screen() :
 
         self.font = pygame.font.SysFont('Arial', 10)
 
-    def make_text(self, font, text, color, bgcolor, top, left, position = 0):
+    def make_text(self, font, text, color, bgcolor, top, left, position=0):
         surf = font.render(text, False, color, bgcolor)
         rect = surf.get_rect()
         if position:
@@ -69,7 +69,7 @@ class Screen() :
             pygame.draw.line(self.surface, black, [sx, start_y], [sx, end_y], 3)
             pygame.draw.line(self.surface, black, [start_x, sy], [end_x, sy], 3)
 
-        # Draw Spots
+        # Draw Stones
         (last_x, last_y) = last_action
 
         if (board[last_y][last_x] > 0) :
@@ -84,6 +84,7 @@ class Screen() :
             for x in range(0, BOARD_SIZE) :
                 spot_x = int(start_x + x_interval * x)
 
+                # Mark Stones (last move, black, white)
                 if (y == last_y) and (x == last_x) :
                     pygame.draw.circle(self.surface, last_action_color, [spot_x, spot_y], STONE_SIZE)
                 elif (board[y][x] > 0) :
@@ -91,7 +92,7 @@ class Screen() :
                 elif (board[y][x] < 0) :
                     pygame.draw.circle(self.surface, white, [spot_x, spot_y], STONE_SIZE)
 
-                # Draw numbering
+                # Mark Number (For give predict informations)
                 if (black_first is not -1) :
                     if (board[y][x] > 1) :
                         if (black_first is 1) :
@@ -116,6 +117,7 @@ class Screen() :
 
         pygame.display.update()
 
+    # Create area of each stone's range (coord)
     def _set_pixel_coords(self) :
         start_x = start_y = BOARD_INTERVAL
         end_x = BOARD_WIDTH - BOARD_INTERVAL

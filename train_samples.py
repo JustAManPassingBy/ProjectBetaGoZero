@@ -47,6 +47,7 @@ class Train_Sample() :
         dir_8_sample_mcts_records = []
 
         # - Create 8 Dirction Rotate
+        # - use deepcopy 
         for i in range(0, 8) : 
             new_sample_winner_item = copy.deepcopy(sample_winner_item)
             new_sample_part_obs_inputs_item = copy.deepcopy(reshape_sample_part_obs_inputs_item)

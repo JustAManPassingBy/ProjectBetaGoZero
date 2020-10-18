@@ -82,12 +82,12 @@ def create_keras_layer():
 
         dense_1 = Dense(1024, activation='elu')(flatten)
 
-        spot_prob = Dense((SQUARE_BOARD_SIZE + 1), kernel_regularizer=regularizers.l2(1e-3), activation='sigmoid', name="spot_prob")(dense_1)
-        win_prob = Dense(1, kernel_regularizer=regularizers.l2(1e-4), activation='sigmoid', name="win_prob")(dense_1)
+        spot_prob = Dense((SQUARE_BOARD_SIZE + 1), kernel_regularizer=regularizers.l2(1e-4), activation='sigmoid', name="spot_prob")(dense_1)
+        win_prob = Dense(1, kernel_regularizer=regularizers.l2(1e-6), activation='sigmoid', name="win_prob")(dense_1)
 
         model = Model(inputs=input_buffer, outputs=[spot_prob, win_prob])
 
-        losses = {"spot_prob" : "categorical_crossentropy", # Majorly use at muitl-classification
+        losses = {"spot_prob" : "categorical_crossentropy",   # Majorly use at muitl-classification -> Go problem's solution is find proper "one" location between multiple locations.
                   "win_prob"  : "binary_crossentropy"}        # 0, 1 Classification. For MSE, scale 0 ~ 1, not -1 ~ 1
 
         loss_weights = {"spot_prob" : 1e-3,

@@ -16,8 +16,10 @@ from definitions import SAVE_PERIOD
 from definitions import WIN_TRAIN_COUNT, LOSE_TRAIN_COUNT
 from definitions import MAX_TURN
 from definitions import RANDOM_MOVE_PROB
+from definitions import MCTS_N_ITERS
 
 from train_samples import Train_Sample
+import time
 
 from game_hub import *
 from layer import *
@@ -66,7 +68,7 @@ class RL_Model():
 
     # Create Keras Model (Return Sequential keras layer)
     def _create_model(self, model_name) :
-        # Define at layer.py
+        # Defined at layer.py
         return create_keras_layer()
 
 
@@ -128,12 +130,12 @@ class RL_Model():
 
         winner_array = []
 
-        for i in range(0, self.move_count) :
+        for i in range(0, len(self.part_obs_inputs_array)) :
             result = winner_start + winner_div * i
             winner_array.append(result)
 
         # - Error check
-        if (len(self.part_obs_inputs_array) != self.move_count) or (len(self.mcts_records) != self.move_count) :
+        if (len(self.part_obs_inputs_array) != len(self.mcts_records)) :
             print("Train func, value error : ", self.move_count, len(self.part_obs_inputs_array), len(self.mcts_records))
             return
 
@@ -155,8 +157,8 @@ class RL_Model():
                     epochs=try_epochs)
 
         print("Add New samples into sample pool")
-        self.Train_Sample.decay(sample_index=WHITE)
-        self.Train_Sample.decay(sample_index=BLACK)
+        #self.Train_Sample.decay(sample_index=WHITE)
+        #self.Train_Sample.decay(sample_index=BLACK)
 
         for idx in range(0, self.move_count) :
             if (idx >= MAX_TURN) :
@@ -195,15 +197,11 @@ class RL_Model():
         root_node = Root_Node(self, copy_GameState, my_color, self.move_count)
         root_node.play_mcts()
 
-        # - Get best move(action / child
-        # )
-        ret_locate, ret_actions = root_node.select_best_child_without_ucb(my_color)
+        # - Get best move(action / child)
+        ret_locate = root_node.select_best_child_without_ucb(my_color).action
+        ret_actions = root_node._calculate_best_actions(my_color)
 
         print(ret_actions)
-
-        # Check whether return is none
-        if (ret_locate is None) :
-            return None, 0.0, []
 
         # - Record current move's database
         mcts_move_prob = root_node.get_spot_prob().flatten()
@@ -213,6 +211,9 @@ class RL_Model():
         win_prob = root_node.get_max_win_prob()
         self.part_obs_inputs_array.append(part_obs_inputs)
         self.mcts_records.append(mcts_move_prob)
+
+        self.opposite_Model.part_obs_inputs_array.append(part_obs_inputs)
+        self.opposite_Model.mcts_records.append(mcts_move_prob)
 
         # - Delete original game state
         root_node.delete()
@@ -229,7 +230,7 @@ class RL_Model():
         return ret_locate, win_prob, ret_actions
 
     # return debug function specified in "debug_mode"
-    # If debug_mode is 0, return get_move()
+    # If debug_mode is 0, return NULL, NULL
     def get_move_debug(self, my_color, GameState, debug_mode) :
         # If debug mode
         if (debug_mode == 1) :
@@ -276,7 +277,8 @@ class RL_Model():
             print(root_node.get_spot_count())
 
             # - From results of MCTS Search, get best move or random move
-            ret_locate, ret_actions = root_node.select_best_child_without_ucb()
+            ret_locate = root_node.select_best_child_without_ucb(my_color).action
+            ret_actions = root_node._calculate_best_actions(my_color)
 
             mcts_move_prob = root_node.get_spot_prob().flatten()
 
@@ -300,8 +302,70 @@ class RL_Model():
 
             return ret_locate, win_prob, ret_actions
 
+        elif (debug_mode == 2) :
+            # - Check return condition : Obviously game is end.
+            if (GameState.is_done() is True) :
+                return None, 0.0, []
+
+            # - Get Board's latest #'s shape (Input)
+            part_obs_inputs = get_game_state(GameState)
+            #part_obs_inputs = GameState.show_4_latest_boards()
+
+            # - Copy Gamestate
+            copy_GameState = GameState.copy()
+
+            # - MCTS Search(play)
+            root_node = Root_Node(self, copy_GameState, my_color, self.move_count, debug_mode=debug_mode)
+
+            print(" -- Input -- ")
+            print(part_obs_inputs)
+
+            iter_times = 1
+
+            while (iter_times > 0) :
+                iter_times = int(input(" Run count : "))
+
+                if (iter_times > 0) :
+                    root_node.play_mcts(n_iters=iter_times)
+
+            # - Get best move(action / child)
+            ret_locate = root_node.select_best_child_without_ucb(my_color).action
+            ret_actions = root_node._calculate_best_actions(my_color)
+
+            print(ret_actions)
+
+            # Check whether return is none
+            if (ret_locate is None) :
+                return None, 0.0, []
+
+            # - Record current move's database
+            mcts_move_prob = root_node.get_spot_prob().flatten()
+
+            root_node.summary()
+
+            win_prob = root_node.get_max_win_prob()
+            self.part_obs_inputs_array.append(part_obs_inputs)
+            self.mcts_records.append(mcts_move_prob)
+
+            self.opposite_Model.part_obs_inputs_array.append(part_obs_inputs)
+            self.opposite_Model.mcts_records.append(mcts_move_prob)
+
+            # - Delete original game state
+            root_node.delete()
+
+            # - Print game information
+            if (self.team == BLACK) :
+                team_string = "BLACK"
+            else :
+                team_string = "WHITE"
+            print("model team : ", str(team_string), " has move : ", ret_locate, " count : ", self.move_count)
+
+            self.move_count += 1
+
+            return ret_locate, win_prob, ret_actions
+
         else :
-            print("[Error] why debug_mode is 0 at debug function ??")
+            print("[Error] Wrong debug mode : ", debug_mode)
             return None, None
 
     ### SAVE & Restore Models
