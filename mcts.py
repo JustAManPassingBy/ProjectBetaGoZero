@@ -13,6 +13,7 @@ from definitions import PARTIAL_OBSERVABILITY, ADDITIONAL_SEARCH_COUNT_DURING_MC
 from definitions import MAX_TURN
 from definitions import MCTS_N_ITERS
 from definitions import RANDOM_MOVE_PROB
+from definitions import TRAIN_COUNTS_TO_SKIP_NONE_MOVE
 
 from record_functions import Draw_Win_Spot
 
@@ -21,25 +22,30 @@ from game_hub import *
 # Each node means specific move
 #            (Root Node)
 #           Initial state
+#             (Turn : 1)
 #             /       \
 #         (Node 1)   (Node 2)
 #          Move 1     Move 2
+#       (Turn : -1) (Turn : -1)
 #          /  \
 #           ... 
 
 class MCTS_Node():
     
-    def __init__(self, action, parent, prior_prob, turn, move_count, Model, GameState, debug_mode=0) :
+    # External program will not create class from this.
+    # Instead, they will use Root_Node()
+    def __init__(self, action, parent, prior_prob, turn, move_count, game_count, Model, GameState, debug_mode=0) :
         self.parent = parent # None if Root node
-        self.action = action # Previous action (X, Y)
+        self.action = action # parent node's action "a"
         self.turn = turn     # BLACK : 1 , WHITE = -1
         self.move_count = move_count
+        self.game_count = game_count
         self.Model = Model
 
         self.GameState = GameState
 
-        self.value_sum = 0.0
-        self.times_visited = 0
+        self.value_sum = 0.0     # This value is same with Q(s, a), where s, a is parent node's state & action
+        self.times_visited = 0   # This value is same with N(s, a), where s, a is parent node's state & action
 
         self.children = []
         self.node_is_leaf = True
@@ -50,7 +56,7 @@ class MCTS_Node():
         self.black_best_action = None
         self.white_best_action = None
 
-        self.prior_prob = prior_prob
+        self.prior_prob = prior_prob # This value is P(s, a), where s, a is parent node's state & action
         
         self.debug_mode = debug_mode
 
@@ -68,6 +74,8 @@ class MCTS_Node():
         return self._get_mean_value(turn)
 
 
+    # Calculate Q Value of current node Q(s, a)
+    # Note : This value is meaningless at root node.
     def _get_mean_value(self, turn) :
         self.calculate_init_node_value()
 
@@ -85,8 +93,8 @@ class MCTS_Node():
         return val
 
 
-    # Standard format for calculating UCB Score
-    def _ucb_score(self, turn, scale=0.5) :  
+    # Calculate UCB-included Q Value Q'(s, a) = Q(s, a) + U(s, a)
+    def _ucb_score(self, turn, scale=1.5) :  
         self.calculate_init_node_value()
 
         # U(s, a) = scale * P(s, a) / (1 + N(s, a))
@@ -99,11 +107,13 @@ class MCTS_Node():
         return self.get_node_value(turn) + scaled_ucb
 
 
-    # Standard format for calculate possible action spaces
+    # Calculate Possible action spots A, a ∈ A
     def calculate_possible_actions(self) :
         if (self.possible_actions_calculated is False) :
             self.possible_actions = get_valid_states(self.GameState)
-            self.possible_actions.append(None) # None means "skip to plate stone"
+
+            if (self.game_count >= TRAIN_COUNTS_TO_SKIP_NONE_MOVE) :
+                self.possible_actions.append(None) # None means "skip to plate stone"
 
             # Below function must assert "Calculating initial node value" 
             self.high_prob_actions = self._get_high_prob_actions()
@@ -111,37 +121,12 @@ class MCTS_Node():
             self.possible_actions_calculated = True
 
 
-    # Standard format to calculate initial node's value
+    # Calculate initial node's value
     # It includes action / spot probabilities, node's value, times_visited, etc..
     def calculate_init_node_value(self,
-                                     opposite=False) :
+                                  opposite=False) :
         if (self.initial_node_value_calculated is False) :
-            # Check whether use opposite model's value
-            if (opposite is True) and (self.turn != self.Model.get_team()) :
-                use_opposite_action = True
-            else :
-                use_opposite_action = False
-
-            # Use model's one value
-            if (self.Model.get_team is WHITE) :
-                use_opposite_value = False
-            else :
-                use_opposite_value = False
-
-            # From above values, calculate Our & Opposite model's value, and save it.
-            if (use_opposite_action is True) and (use_opposite_value is True) :
-                self.action_prob , self.node_init_value = self.Model.opposite_Model.predict_func(self.GameState.show_4_latest_boards(), self.move_count)
-            
-            elif (use_opposite_action is True) and (use_opposite_value is False) :
-                self.action_prob, _ = self.Model.opposite_Model.predict_func(self.GameState.show_4_latest_boards(), self.move_count)
-                _, self.node_init_value = self.Model.predict_func(self.GameState.show_4_latest_boards(), self.move_count) 
-            
-            elif (use_opposite_action is False) and (use_opposite_value is True) :
-                _ , self.node_init_value = self.Model.opposite_Model.predict_func(self.GameState.show_4_latest_boards(), self.move_count)
-                self.action_prob , _  = self.Model.predict_func(self.GameState.show_4_latest_boards(), self.move_count) 
-
-            else :
-                self.action_prob , self.node_init_value = self.Model.predict_func(self.GameState.show_4_latest_boards(), self.move_count) # spot_prob / win_prob
+            self.action_prob , self.node_init_value = self.Model.predict_func(self.GameState.show_4_latest_boards(), self.move_count) # spot_prob / win_prob
 
             self.node_init_value = np.asscalar(self.node_init_value)
             self.action_prob = self.action_prob.flatten()
@@ -158,9 +143,10 @@ class MCTS_Node():
             self.initial_node_value_calculated = True
 
 
+    # Calculate π(a) [pi(a)]
     def _calculate_spot_prob_from_action(self, action) :
         if (action is None) :
-            return 0.0
+            return self.action_prob[BOARD_SIZE]
 
         (action_x, action_y) = action
         action_idx = action_x + action_y * BOARD_SIZE
@@ -170,7 +156,7 @@ class MCTS_Node():
         return self.action_prob[action_idx]
 
 
-    ##  Functions to get high probability actions
+    ##  Functions to get high probability actions (Calculate A', which a' ∈ π)
     def _get_high_prob_actions(self, num_actions=12) :
         self.calculate_init_node_value()
         
@@ -279,7 +265,7 @@ class MCTS_Node():
         best_child = None
         best_actions = []
 
-        # Black : Find maximum
+        # Black : Q(s, a) is better if this value is closer to 1
         if (parent_turn is BLACK) :
             max = MIN_VALUE - 1
 
@@ -287,7 +273,7 @@ class MCTS_Node():
                 if (child._get_mean_value(parent_turn) > max) :
                     max = child._get_mean_value(parent_turn)
                     best_child = child
-        # White : Find minimum
+        # White : Q(s, a) is better if this value is closer to 0 (or -1)
         elif (parent_turn is WHITE) :
             min = MAX_VALUE + 1
 
@@ -297,9 +283,10 @@ class MCTS_Node():
                     best_child = child
 
         if (best_child is None) :
-            print("Error : why search result is 0 in _calculate_best_actions")
+            print("Error : best child is None in _calculate_best_actions")
             return []
         
+        # Near future's move will be located in frone of the list
         best_actions.append(best_child.action)
         best_actions.extend(best_child._calculate_best_actions(self.turn))
 
@@ -307,7 +294,9 @@ class MCTS_Node():
     
 
     def select_best_child(self, parent_turn) :
-        # - Parent will evaluate child's value
+        # - In perspective of parent, choose child.
+        #    * If parent turn is black, best child means _ucb_score() (Q'(s, a)) is high
+        #    * If parent turn is white, best child means _ucb_score() (Q'(s, a)) is low
         if self._is_leaf() :
             print("Error : is_leaf in select_best_child")
             return None
@@ -353,15 +342,16 @@ class MCTS_Node():
 
 
     def select_best_child_without_ucb(self, parent_turn) :
-        # - Parent will evaluate child's value
+        # - In perspective of parent, choose child.
+        #    * If parent turn is black, best child means _mean_value (Q(s, a)) is closer to 1
+        #    * If parent turn is white, best child means _mean_value (Q(s, a)) is closer to 0 or -1
         if self._is_leaf() :
             print("Error : is_leaf in select_best_child_without_ucb")
             return None
 
         best_child = None
 
-        # If Parent turn is BLACK.
-        # get maximum value
+        # Black : Q(s, a) is better if this value is closer to 1
         if (parent_turn is BLACK) :
             max = MIN_VALUE - 1
 
@@ -369,8 +359,7 @@ class MCTS_Node():
                 if (child._get_mean_value(parent_turn) > max) :
                     max = child._get_mean_value(parent_turn)
                     best_child = child
-        # If Parent turn is white.
-        # get minimum value
+        # White : Q(s, a) is better if this value is closer to 0 or -1
         elif (parent_turn is WHITE) :
             min = MAX_VALUE + 1
 
@@ -424,11 +413,7 @@ class MCTS_Node():
 
         best_child = self.select_best_child(parent_turn)
 
-        if (isinstance(best_child, MCTS_Node) is False) :
-            print("Error : best_child is not class in select_best_leaf")
-            print(best_child)
-
-        # At next recursive, current child will become parents.
+        # At next recursive, current node becomes parent.
         # So, reverse parent_turn value
         return best_child.select_best_leaf(parent_turn * -1)
 
@@ -440,19 +425,11 @@ class MCTS_Node():
         if (self.debug_mode == 2) :
             print("[select_best_leaf_with_random] turn : ", self.turn)
 
-        best_child = None
-
         # - Search child randomly with probability of random_prob
         if (rnd.random() < RANDOM_MOVE_PROB) :
             best_child = self.select_random_child()
         else :
             best_child = self.select_best_child(parent_turn)
-
-        if (isinstance(best_child, MCTS_Node) is False) :
-            print("Error : best_child is not class in select_best_leaf")
-            print(best_child)
-
-            return self, parent_turn
 
        # At next recursive, current child will become parents.
         # So, reverse parent_turn value
@@ -493,10 +470,9 @@ class MCTS_Node():
                 continue
 
             next_turn = self.turn * -1
-
             child_spot_prob = self._calculate_spot_prob_from_action(action)
 
-            new_mcts_node = MCTS_Node(action, self, child_spot_prob, next_turn, next_move_count, self.Model, new_GameState, debug_mode=self.debug_mode)
+            new_mcts_node = MCTS_Node(action, self, child_spot_prob, next_turn, next_move_count, self.game_count, self.Model, new_GameState, debug_mode=self.debug_mode)
             
             if (isinstance(new_mcts_node, MCTS_Node) is False) :
                 print("Error : new_mcts_node is not object of MCTS Node")
@@ -517,6 +493,7 @@ class MCTS_Node():
         self.calculate_init_node_value()
 
         # During expand, create new MCTS_Node includes calculating its own winning probability
+        # Maybe play some mini game?
         total_reward = self.node_init_value
         
         return total_reward
@@ -669,25 +646,37 @@ class MCTS_Node():
 
         return
 
-    # From current state, get maximum win probability
-    def get_max_win_prob(self) :
-        return self._get_mean_value(self.turn)
+    def get_best_move_and_actions(self) :
+        best_child = self.select_best_child_without_ucb(self.turn)
+
+        if (best_child is None) :
+            best_move = None
+            best_move_win_prob = best_child._get_mean_value(self.turn)
+            best_actions = None
+        else :
+            best_move = best_child.action
+            best_move_win_prob = best_child._get_mean_value(self.turn)
+            best_actions = self._calculate_best_actions(self.turn)
+
+        return best_move, best_move_win_prob, best_actions
+
 
 
 class Root_Node(MCTS_Node) :
     
-    def __init__(self, Model, GameState, turn, move_count, debug_mode=0) :
-        self.parent = None
-        self.action = None # Root node's previous action is None
-        self.prior_prob = None
+    def __init__(self, Model, GameState, turn, move_count, game_count, debug_mode=0) :
+        self.parent = None      # Root node has no parent
+        self.action = None      # Root node's previous action is None
+        self.prior_prob = None  # Root node has no prior action or prior prob
 
-        self.turn = turn # BLACK = 1 / WHITE = -1
+        self.turn = turn             # BLACK = 1 / WHITE = -1
         self.move_count = move_count # Increased only white -> black
+        self.game_count = game_count # Current Train is #th train.
         self.Model = Model
         self.GameState = GameState
 
-        self.value_sum = 0.0
-        self.times_visited = 0
+        self.value_sum = 0.0         # Warn : At Root node, using this value is meaningless
+        self.times_visited = 0       # Warn : At Root node, using this value is meaningless
 
         self.children = []
         self.node_is_leaf = True

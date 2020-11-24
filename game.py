@@ -203,6 +203,11 @@ class GameState(object):
         # deepcopy latest boards
         latest_boards = copy.deepcopy(self.latest_boards)
 
+        # Mark current move is black or white
+        mark_turn = np.array([self.current_player] * BOARD_SIZE * BOARD_SIZE).reshape(-1, 9, 9)
+
+        latest_boards = np.concatenate((latest_boards, mark_turn), axis=0)
+
         # latest board normalization
         return (latest_boards / 2) + 0.5
 
@@ -216,7 +221,7 @@ class GameState(object):
         if (self.is_end_of_game is True) :
             return True
 
-        return ((self.num_stones > (NUM_STONES_TO_END_GAME + offset)) or (self.move_count > NUM_MOVES_TO_END_GAME))
+        return ((self.num_stones > (NUM_STONES_TO_END_GAME + offset)) or (self.move_count > (NUM_MOVES_TO_END_GAME + offset)))
 
     def copy(self):
         """get a copy of this Game state

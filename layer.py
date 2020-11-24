@@ -57,7 +57,8 @@ from definitions import SAVE_PERIOD
 #  6. Dense 2 : 1024, Relu
 #  7. Output : (Spot -  [0 : 19 x 19] - 0 ~ 1[Sigmoid]) / (WinProb - [0 : 1] - 0 ~ 1[Sigmoid])
 def create_keras_layer():
-        input_buffer = Input(shape=(BOARD_SIZE, BOARD_SIZE, PARTIAL_OBSERVABILITY))
+        # PARTIAL_OBSERVABILITY + 1(mark_turn)
+        input_buffer = Input(shape=(BOARD_SIZE, BOARD_SIZE, (PARTIAL_OBSERVABILITY + 1)))
 
         zero_padding_1 = ZeroPadding2D(padding=(3, 3))(input_buffer)
         conv_1 = Conv2D(16, (3, 3), padding='same', strides=(1, 1))(zero_padding_1)
@@ -82,15 +83,15 @@ def create_keras_layer():
 
         dense_1 = Dense(1024, activation='elu')(flatten)
 
-        spot_prob = Dense((SQUARE_BOARD_SIZE + 1), kernel_regularizer=regularizers.l2(1e-4), activation='sigmoid', name="spot_prob")(dense_1)
-        win_prob = Dense(1, kernel_regularizer=regularizers.l2(1e-6), activation='sigmoid', name="win_prob")(dense_1)
+        spot_prob = Dense((SQUARE_BOARD_SIZE + 1), kernel_regularizer=regularizers.l2(1e-3), activation='sigmoid', name="spot_prob")(dense_1)
+        win_prob = Dense(1, kernel_regularizer=regularizers.l2(1e-4), activation='tanh', name="win_prob")(dense_1)
 
         model = Model(inputs=input_buffer, outputs=[spot_prob, win_prob])
 
         losses = {"spot_prob" : "categorical_crossentropy",   # Majorly use at muitl-classification -> Go problem's solution is find proper "one" location between multiple locations.
-                  "win_prob"  : "binary_crossentropy"}        # 0, 1 Classification. For MSE, scale 0 ~ 1, not -1 ~ 1
+                  "win_prob"  : "mean_squared_error"}        # 0, 1 Classification. For MSE, scale 0 ~ 1, not -1 ~ 1
 
-        loss_weights = {"spot_prob" : 1e-3,
-                        "win_prob"  : 1e-4}        
+        loss_weights = {"spot_prob" : 1e-4,
+                        "win_prob"  : 1e-5}        
 
         return model , losses , loss_weights

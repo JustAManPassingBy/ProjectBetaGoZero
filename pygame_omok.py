@@ -8,6 +8,7 @@ from game_colosseum import *
 import copy
 
 from definitions import WINDOW_WIDTH, WINDOW_HEIGHT, BOARD_WIDTH, BOARD_HEIGHT, BG_COLOR, GRID_SIZE, BOARD_SIZE
+from definitions import TRAIN_COUNTS_TO_SKIP_NONE_MOVE
 
 fps = 60
 fps_clock = pygame.time.Clock()
@@ -70,14 +71,18 @@ class Screen() :
             pygame.draw.line(self.surface, black, [start_x, sy], [end_x, sy], 3)
 
         # Draw Stones
-        (last_x, last_y) = last_action
+        if (last_action is not None) :
+            (last_x, last_y) = last_action
 
-        if (board[last_y][last_x] > 0) :
-            black_first = 1
-        elif (board[last_y][last_x] < 0) :
-            black_first = 0
+            if (board[last_y][last_x] > 0) :
+                black_first = 1
+            elif (board[last_y][last_x] < 0) :
+                black_first = 0
+            else :
+                black_first = -1
         else :
             black_first = -1
+        
 
         for y in range(0, BOARD_SIZE) :
             spot_y = int(start_y + y_interval * y)
@@ -85,7 +90,7 @@ class Screen() :
                 spot_x = int(start_x + x_interval * x)
 
                 # Mark Stones (last move, black, white)
-                if (y == last_y) and (x == last_x) :
+                if (last_action is not None) and ((y == last_y) and (x == last_x)) :
                     pygame.draw.circle(self.surface, last_action_color, [spot_x, spot_y], STONE_SIZE)
                 elif (board[y][x] > 0) :
                     pygame.draw.circle(self.surface, black, [spot_x, spot_y], STONE_SIZE)
@@ -221,8 +226,11 @@ def create_history_board(board, move_history, is_turn_white) :
     return new_board
 
 def run_game(surface, board, menu) :
+    TS_dummy = Train_Sample()
 
-    _ , black_model, white_model = main_init_model()
+    _ , black_model = main_init_model(TS_dummy)
+
+    white_model = black_model
 
     gameengine = GameState()
     gameboard = gameengine.show_result()
@@ -236,8 +244,9 @@ def run_game(surface, board, menu) :
 
     # If Your turn is white
     else :
-        game_end, winner, gameengine, action, best_actions = Game_Collosseum_Onemove(gameengine, black_model, white_model, 0, 0)
-
+        game_end, winner, gameengine, action, best_actions = Game_Collosseum_Onemove(gameengine, black_model, white_model, 
+                                                                                     TRAIN_COUNTS_TO_SKIP_NONE_MOVE + 1, 0)
+ 
         print(best_actions)
 
         gameboard = gameengine.show_result()

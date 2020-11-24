@@ -13,12 +13,13 @@ from definitions import MAX_VALUE, MIN_VALUE
 from definitions import BOARD_SIZE, SQUARE_BOARD_SIZE
 from definitions import PARTIAL_OBSERVABILITY, ADDITIONAL_SEARCH_COUNT_DURING_MCTS
 from definitions import SAVE_PERIOD
-from definitions import WIN_TRAIN_COUNT, LOSE_TRAIN_COUNT
+from definitions import TRAIN_COUNT
 from definitions import MAX_TURN
 from definitions import RANDOM_MOVE_PROB
 from definitions import MCTS_N_ITERS
 
 from train_samples import Train_Sample
+from record_functions import Record
 import time
 
 from game_hub import *
@@ -51,7 +52,7 @@ def get_latest_checkpoint_number(filename) :
 class RL_Model():
 
     # Initialize Function
-    def __init__(self, model_name="NULL", print_summary=False) :
+    def __init__(self, Train_Sample_Class, model_name="NULL", print_summary=False) :
         self.model_name = model_name
 
         # Create models for each move
@@ -64,7 +65,7 @@ class RL_Model():
         self.model = model
 
         self.move_count = 0
-        self.Train_Sample = Train_Sample()
+        self.Train_Sample = Train_Sample_Class
 
     # Create Keras Model (Return Sequential keras layer)
     def _create_model(self, model_name) :
@@ -73,166 +74,130 @@ class RL_Model():
 
 
     ### Set / Get Functions ###
-    # Set Team & initialize move count
+    # Initialize Model
     # Model user should call this function to initialize previous game states. (move count, stones, ...)
-    def set_team(self, team) :
-        self.team = team
+    def initialize_model(self) :
         self.move_count = 0
-
-        self.part_obs_inputs_array = [] # Records of inputs consider machine's team
-        self.mcts_records = []   # Records of MCTS Result (for spot_prob)
-
-    # Get Team
-    def get_team(self) :
-        return self.team
+        
+        self.input_arrays = []
+        self.mcts_records = []
+        self.sample_counts = 0
 
     # Get Move Count
     def get_move_count(self) :
         return self.move_count
 
     # Get Current Board's (PARTIAL_OBSERVABILITY) latest states
-    def predict_func(self, part_obs_inputs_array, move_count) :
-        part_obs_inputs_array = part_obs_inputs_array.reshape(1, BOARD_SIZE, BOARD_SIZE, PARTIAL_OBSERVABILITY)
+    def predict_func(self, input_array, move_count) :
+        input_array = input_array.reshape(1, BOARD_SIZE, BOARD_SIZE, (PARTIAL_OBSERVABILITY + 1))
         
-        if (move_count > MAX_TURN) :
-            return
-
         # return next_movement's probs & shape
-        return self.model.predict(part_obs_inputs_array)
-
-
-    # Record opposite model
-    # - This model will be used at mcts -> expand
-    def hang_opposite_model(self, opposite_Model) :
-        self.opposite_Model = opposite_Model
-
-        return
+        return self.model.predict(input_array)
 
 
     ### Train / Test Functions ###
+    # Add samples
+    def add_samples(self, input_arrays, spot_probs) :
+        # spot prob is records of Monte Carlo Tree Search
+        
+        self.input_arrays.extend(input_arrays)
+        self.mcts_records.extend(spot_probs)
+
+        # - Error check
+        assert(len(self.input_arrays) == len(self.mcts_records))
+
+        self.sample_counts = len(self.input_arrays)
+
     # Train with results
     def train_func(self, winner) :
-        print("Model : ", str(self.team), " winner val : ", str(winner))
-
-        # Black win : 1 -> 1
-        # White Win : -1 -> 0
-        # Same win prob = 0 -> 0.5
-        winner = 0.5 + (winner * 0.5) # Sigmoid : [-1 ~ 1] -> [0 ~ 1]
+        # Start of Train Function
+        Record(str("Move count : " + str(self.move_count) + " winner val : " + str(winner) + "\n"),  "result/log.txt")
         
-        # - Increasing win scores.
+        # - Option : Increasing win scores.
         #  At the first of the game, win probability is not precise.
         #  And when game reaches to end, win probability is obvious.
         #  So decreasing "win probability" at the beginning of the game, and maximize it at end of the game.
-        winner_start = 0.2 + 0.6 * winner # 0.6 for win , 0.4 for lose
+        #winner_start = 0.2 + 0.6 * winner # 0.6 for win , 0.4 for lose
         #winner_start = winner
-        winner_end = winner
-        winner_div = (winner_end - winner_start) / float(self.move_count)
+        #winner_end = winner
+        #winner_div = (winner_end - winner_start) / float(self.move_count)
 
-        winner_array = []
+        winner_array_for_train = [winner] * self.sample_counts
 
-        for i in range(0, len(self.part_obs_inputs_array)) :
-            result = winner_start + winner_div * i
-            winner_array.append(result)
+        try_epochs = TRAIN_COUNT
 
-        # - Error check
-        if (len(self.part_obs_inputs_array) != len(self.mcts_records)) :
-            print("Train func, value error : ", self.move_count, len(self.part_obs_inputs_array), len(self.mcts_records))
-            return
-
-        # - Option : you can set winner's and loser's train count(epochs) different.
-        if (int(winner) is 1) :
-            try_epochs = WIN_TRAIN_COUNT
-        else :
-            try_epochs = LOSE_TRAIN_COUNT
-            
         # - Change (-1, 4, X, X)[Channel first] to (-1, X, X, 4)[Channel last]
-        part_obs_inputs_array = np.transpose(np.array(self.part_obs_inputs_array), (0, 2, 3, 1))
+        input_arrays = np.transpose(np.array(self.input_arrays), (0, 2, 3, 1))
         mcts_records = np.array(self.mcts_records).reshape(-1, SQUARE_BOARD_SIZE + 1)
-        winner_array = np.array(winner_array)
+        winner_array_for_train = np.array(winner_array_for_train).reshape(-1)
 
-        print("Train Once")
+        # - Option : Decay, decreases old record's effectness
+        #self.Train_Sample.decay()
 
-        self.model.fit(part_obs_inputs_array, # Input
-                    {"spot_prob" : mcts_records, "win_prob"  : winner_array}, # Outputs
-                    epochs=try_epochs)
 
-        print("Add New samples into sample pool")
-        #self.Train_Sample.decay(sample_index=WHITE)
-        #self.Train_Sample.decay(sample_index=BLACK)
+        if (winner == BLACK) :
+            index = 1
+        else :
+            index = 0
 
-        for idx in range(0, self.move_count) :
-            if (idx >= MAX_TURN) :
-                break
+        Record(str("Add New samples " + str(self.sample_counts) + " , " + str(len(winner_array_for_train)) + " into sample pool, idx : " + str(index) + "\n"),  "result/log.txt")
 
-            # Seperate black win's pool and white win's pool
-            self.Train_Sample.add(winner_array[idx], part_obs_inputs_array[idx], mcts_records[idx], int(winner))
+        for idx in range(0, self.sample_counts) :
+            self.Train_Sample.add(winner_array_for_train[idx], input_arrays[idx], mcts_records[idx], sample_index=index)
 
-        t_winner_array, t_part_obs_inputs_array, t_mcts_records = self.Train_Sample.get_all()
+        t_winner_array, t_input_arrays, t_mcts_records = self.Train_Sample.get_all()
 
-        print("Train")
-        self.model.fit(t_part_obs_inputs_array, # Input
+        Record(str("Train Samples : " + str(len(t_mcts_records)) + " Index : " + str(index) + "\n"),  "result/log.txt")
+        self.model.fit(t_input_arrays,                                               # Input
                        {"spot_prob" : t_mcts_records, "win_prob"  : t_winner_array}, # Outputs
                        epochs=try_epochs)
                        
     # Get Current Board's N(PARTIAL_OBSERVABILITY) latest states
     # Search Proper movement with MCTS(mcts.py)
     # return Next Stone's state and win probability
-    def get_move(self, my_color, GameState, debug_mode=0) :
+    def get_move(self, my_color, GameState, game_count, debug_mode=0) :
         # - Check whether use debug mode
         if (debug_mode is not 0) :
             return self.get_move_debug(my_color, GameState, debug_mode)
 
         # - Check return condition : Obviously game is end.
         if (GameState.is_done() is True) :
-            return None, 0.0, []
-
-        # - Get Board's latest #'s shape (Input)
-        part_obs_inputs = get_game_state(GameState)
-        #part_obs_inputs = GameState.show_4_latest_boards()
+            print("Error : call model's get move even if game is end")
+            return None, 0.0, [], [], []
 
         # - Copy Gamestate
         copy_GameState = GameState.copy()
 
         # - MCTS Search(play)
-        root_node = Root_Node(self, copy_GameState, my_color, self.move_count)
+        root_node = Root_Node(self, copy_GameState, my_color, self.move_count, game_count)
         root_node.play_mcts()
 
-        # - Get best move(action / child)
-        ret_locate = root_node.select_best_child_without_ucb(my_color).action
-        ret_actions = root_node._calculate_best_actions(my_color)
-
-        print(ret_actions)
+        # - Get best move and probability(action, win_prob, (expected) actions list)
+        ret_locate, win_prob, ret_actions = root_node.get_best_move_and_actions()
 
         # - Record current move's database
-        mcts_move_prob = root_node.get_spot_prob().flatten()
+        spot_prob = root_node.get_spot_prob().flatten()
 
+        # - Option : Summary root node
         root_node.summary()
 
-        win_prob = root_node.get_max_win_prob()
-        self.part_obs_inputs_array.append(part_obs_inputs)
-        self.mcts_records.append(mcts_move_prob)
-
-        self.opposite_Model.part_obs_inputs_array.append(part_obs_inputs)
-        self.opposite_Model.mcts_records.append(mcts_move_prob)
+        # - Get Board's latest #'s shape (Deep Learning layer's Input)
+        board_input = get_game_state(GameState)
 
         # - Delete original game state
         root_node.delete()
 
-        # - Print game information
-        if (self.team == BLACK) :
-            team_string = "BLACK"
-        else :
-            team_string = "WHITE"
-        print("model team : ", str(team_string), " has move : ", ret_locate, " count : ", self.move_count)
+        print("model has move : ", ret_locate, " count : ", self.move_count)
 
         self.move_count += 1
 
-        return ret_locate, win_prob, ret_actions
+        return ret_locate, win_prob, ret_actions, board_input, spot_prob
 
     # return debug function specified in "debug_mode"
     # If debug_mode is 0, return NULL, NULL
     def get_move_debug(self, my_color, GameState, debug_mode) :
         # If debug mode
+        '''
         if (debug_mode == 1) :
 
              # - Check return condition : Obviously game is end.
@@ -367,37 +332,39 @@ class RL_Model():
         else :
             print("[Error] Wrong debug mode : ", debug_mode)
             return None, None
+        '''
 
     ### SAVE & Restore Models
     def save_model(self, 
-                   num_train_counts) :
-        save_checkpoint="result/checkpoint.txt"
-        save_latest_checkpoint_number(save_checkpoint, num_train_counts)
+                   save_index,
+                   mark=0) :
 
-        keras_save_name = str("result/save_" + str(num_train_counts) + "_" + str(self.team))
+        save_checkpoint_filename = "result/checkpoint.txt"
+        save_latest_checkpoint_number(save_checkpoint_filename, save_index)
+
+        keras_save_name = str("result/save_" + str(save_index) + "_" + str(mark))
         self.model.save(keras_save_name)
 
-        print("save model : ", save_checkpoint, keras_save_name, str(num_train_counts))
+        print("save model at : ", keras_save_name + " index : " + str(save_index) + " mark : " + str(mark))
 
         return
 
     def restore_model(self, 
-                      restore_point=None) :
+                      restore_index=None,
+                      mark=0) :
         
-        save_checkpoint="result/checkpoint.txt"
+        save_checkpoint_filename = "result/checkpoint.txt"
 
-        if (restore_point is None) :
-            restore_point = get_latest_checkpoint_number(save_checkpoint)
+        if (restore_index is None) :
+            restore_index = get_latest_checkpoint_number(save_checkpoint_filename)
 
-        if (restore_point < 0) :
+        if (restore_index < 1) :
             return 0
 
-        restore_point = int(restore_point / SAVE_PERIOD) * SAVE_PERIOD
-
-        keras_load_name= str("result/save_" + str(restore_point) + "_" + str(self.team))
+        keras_load_name = str("result/save_" + str(restore_index) + "_" + str(mark))
         self.model = load_model(keras_load_name)
 
-        print("restore model : ", save_checkpoint, keras_load_name, restore_point)
+        print("restore model at : ", keras_load_name + " index : " + str(restore_index) + " mark : " + str(mark))
         
-        return restore_point
+        return restore_index
 
